@@ -1,28 +1,11 @@
 """ui/tray.py — 系统托盘（常驻入口，截图工具的标准形态）。"""
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QObject
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
-
-def make_icon(size: int = 64) -> QIcon:
-    """程序内绘制的简易图标：紫蓝渐变圆角方块 + S 字母。"""
-    pix = QPixmap(size, size)
-    pix.fill(QColor(0, 0, 0, 0))
-    p = QPainter(pix)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setBrush(QColor(95, 128, 245))
-    p.setPen(Qt.PenStyle.NoPen)
-    p.drawRoundedRect(2, 2, size - 4, size - 4, size // 4, size // 4)
-    p.setPen(QColor(255, 255, 255))
-    font = p.font()
-    font.setPixelSize(int(size * 0.5))
-    font.setBold(True)
-    p.setFont(font)
-    p.drawText(pix.rect(), 0x0084, "S")  # AlignCenter
-    p.end()
-    return QIcon(pix)
+from .icon import make_icon
 
 
 class TrayIcon(QObject):
@@ -30,6 +13,8 @@ class TrayIcon(QObject):
     action_scroll = Signal()
     action_pick = Signal()
     action_hide_pins = Signal()
+    action_settings = Signal()
+    action_check_update = Signal()
     action_quit = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -40,16 +25,19 @@ class TrayIcon(QObject):
         menu.addAction("✂️ 区域截图 (F1)", self.action_capture.emit)
         menu.addAction("📜 滚动长截图 (Ctrl+F1)", self.action_scroll.emit)
         menu.addAction("🎨 取色器 (F2)", self.action_pick.emit)
-        menu.addSeparator()
         menu.addAction("🙈 隐藏全部贴图 (Shift+F3)", self.action_hide_pins.emit)
+        menu.addSeparator()
+        menu.addAction("⚙️ 设置…", self.action_settings.emit)
+        menu.addAction("🔄 检查更新", self.action_check_update.emit)
         menu.addSeparator()
         menu.addAction("退出", self.action_quit.emit)
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(self._on_activated)
 
     def _on_activated(self, reason) -> None:
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.action_capture.emit()
+        # 双击托盘图标打开设置（单击留给截图）
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.action_settings.emit()
 
     def show(self) -> None:
         self._tray.show()

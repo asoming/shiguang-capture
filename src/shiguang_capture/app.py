@@ -1,4 +1,4 @@
-"""app.py — 应用装配：托盘 + 热键 + 捕获 + 贴图 + 取色。
+"""app.py — 应用装配：托盘 + 热键 + 捕获 + 贴图 + 取色 + 设置 + 更新。
 
 设计约束（PRD）：
 - 截图链路保持轻量，录屏模块不进入本进程（V2.0 独立入口）。
@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 
+from . import __version__
+from . import autostart
 from .capture.grabber import grab_region
 from .capture.selector import RegionSelector
 from .config import AppConfig
@@ -23,9 +27,17 @@ from .naming import next_seq, shot_name
 from .ocr import MockOCRBackend, OCRBackend, assert_privacy_guard
 from .ui.picker import ColorPickerOverlay
 from .ui.pin_window import PinWindow
+from .ui.settings_window import SettingsWindow
 from .ui.tray import TrayIcon
+from .updater import RELEASES_PAGE, UpdateInfo, check_for_update
 
 log = logging.getLogger(__name__)
+
+
+class _UpdateBridge(QObject):
+    """工作线程 → Qt 主线程的结果桥。"""
+
+    finished = Signal(object)  # UpdateInfo | None
 
 
 class AppController:
@@ -38,20 +50,35 @@ class AppController:
         self._pins_hidden = False
         self._selector: RegionSelector | None = None
         self._picker: ColorPickerOverlay | None = None
+        self._settings: SettingsWindow | None = None
+        self._last_image = None
 
         self.tray = TrayIcon()
         self.tray.action_capture.connect(self.start_region_capture)
         self.tray.action_pick.connect(self.start_color_pick)
         self.tray.action_hide_pins.connect(self.toggle_pins)
+        self.tray.action_settings.connect(self.open_settings)
+        self.tray.action_check_update.connect(lambda: self.check_updates(manual=True))
         self.tray.action_quit.connect(self.shutdown)
         self.tray.show()
 
         self.hotkeys = HotkeyManager()
         self.hotkeys.bridge.triggered.connect(self._on_hotkey)
+        self._register_hotkeys()
+
+        self._update_bridge = _UpdateBridge()
+        self._update_bridge.finished.connect(self._on_update_result)
+        self._update_manual = False
+        # 启动 3 秒后静默检查一次更新（仅发现新版本时打扰用户）
+        QTimer.singleShot(3000, lambda: self.check_updates(manual=False))
+
+    # ---------- 热键 ----------
+    def _register_hotkeys(self) -> None:
         hk = self.config.hotkeys
-        self.hotkeys.register({
+        ok = self.hotkeys.register({
             "capture_region": hk.capture_region,
             "capture_fullscreen": hk.capture_fullscreen,
+            "capture_scroll": hk.capture_scroll,
             "pin_last": hk.pin_last,
             "color_picker": hk.color_picker,
             "hide_all_pins": hk.hide_all_pins,
@@ -60,12 +87,14 @@ class AppController:
         if conflicts:
             log.warning("热键冲突: %s", conflicts)
             self.tray.notify("拾光 Capture", f"检测到热键冲突：{conflicts[0][0]} 与 {conflicts[0][1]}")
+        if not ok:
+            log.warning("全局热键未生效（pynput 缺失或系统权限不足）")
 
-    # ---------- 热键 ----------
     def _on_hotkey(self, action: str) -> None:
         {
             "capture_region": self.start_region_capture,
             "capture_fullscreen": self.capture_fullscreen,
+            "capture_scroll": self.start_scroll_capture,
             "pin_last": self.pin_from_clipboard,
             "color_picker": self.start_color_pick,
             "hide_all_pins": self.toggle_pins,
@@ -77,6 +106,9 @@ class AppController:
         self._selector.region_selected.connect(self._on_region)
         self._selector.show()
 
+    def start_scroll_capture(self) -> None:
+        self.tray.notify("拾光 Capture", "滚动长截图将在 V1.1 提供（当前版本请先分段截取）")
+
     def _on_region(self, rect: Rect) -> None:
         image = grab_region(rect)
         if self.config.copy_to_clipboard:
@@ -86,9 +118,8 @@ class AppController:
         self._last_image = image
 
     def capture_fullscreen(self) -> None:
-        from .capture.grabber import grab_fullscreen, virtual_desktop_rect
+        from .capture.grabber import grab_fullscreen
 
-        _ = virtual_desktop_rect  # 预留多屏模式选择
         image = grab_fullscreen()
         if self.config.copy_to_clipboard:
             QGuiApplication.clipboard().setImage(image)
@@ -122,7 +153,7 @@ class AppController:
     def pin_from_clipboard(self) -> None:
         img = QGuiApplication.clipboard().image()
         if img.isNull():
-            img = getattr(self, "_last_image", None)
+            img = self._last_image
         if img is None or img.isNull():
             self.tray.notify("拾光 Capture", "剪贴板中没有图像")
             return
@@ -142,6 +173,55 @@ class AppController:
     def _on_color(self, value: str) -> None:
         QGuiApplication.clipboard().setText(value)
         self.tray.notify("拾光 Capture", f"已复制色值 {value}")
+
+    # ---------- 设置 ----------
+    def open_settings(self) -> None:
+        if self._settings is not None:
+            self._settings.raise_()
+            self._settings.activateWindow()
+            return
+        win = SettingsWindow(self.config)
+        win.settings_saved.connect(self.apply_config)
+        win.check_update_requested.connect(lambda: self.check_updates(manual=True))
+        win.destroyed.connect(lambda: setattr(self, "_settings", None))
+        self._settings = win
+        win.show()
+
+    def apply_config(self, cfg: AppConfig) -> None:
+        """设置保存：落盘 + 热键重注册 + 自启动同步，一次完成。"""
+        self.config = cfg
+        cfg.save()
+        self._register_hotkeys()
+        if cfg.launch_at_login != autostart.is_enabled():
+            if autostart.set_enabled(cfg.launch_at_login):
+                log.info("开机自启动已%s", "开启" if cfg.launch_at_login else "关闭")
+            elif cfg.launch_at_login:
+                self.tray.notify("拾光 Capture", "当前平台暂不支持设置开机自启动")
+        self.tray.notify("拾光 Capture", "设置已保存并生效")
+
+    # ---------- 更新 ----------
+    def check_updates(self, manual: bool) -> None:
+        self._update_manual = manual
+
+        def worker() -> None:
+            info = check_for_update(__version__)
+            self._update_bridge.finished.emit(info)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_update_result(self, info: UpdateInfo | None) -> None:
+        if info is not None:
+            text = f"发现新版本 {info.version}"
+            self.tray.notify("拾光 Capture · 有更新", f"{text}，前往 Releases 下载")
+            QGuiApplication.clipboard().setText(info.url)
+            log.info("%s: %s（链接已复制）", text, info.url)
+        elif self._update_manual:
+            self.tray.notify("拾光 Capture", f"已是最新版本 v{__version__}")
+        if self._settings is not None:
+            if info is not None:
+                self._settings.set_update_result(f"发现新版本 {info.version}（链接已复制到剪贴板）")
+            else:
+                self._settings.set_update_result(f"已是最新 v{__version__} · 更新发布于 {RELEASES_PAGE}")
 
     # ---------- 生命周期 ----------
     def shutdown(self) -> None:
