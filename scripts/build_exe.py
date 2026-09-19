@@ -9,6 +9,13 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+try:
+    from shiguang_capture._console import fix_console_encoding
+
+    fix_console_encoding()   # Windows CI 控制台默认 cp1252，中文输出会炸
+except ImportError:
+    pass
 
 
 def main() -> int:

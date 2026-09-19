@@ -15,6 +15,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    from ._console import fix_console_encoding
+
+    fix_console_encoding()   # Windows 控制台默认非 UTF-8，中文输出会炸
     args = build_parser().parse_args()
     if args.version:
         print(f"{__app_name__} v{__version__}")

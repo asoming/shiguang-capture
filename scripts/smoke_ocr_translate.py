@@ -14,8 +14,15 @@ import time
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("SHIGUANG_NO_HOTKEYS", "1")
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+
+from shiguang_capture._console import fix_console_encoding  # noqa: E402
+
+# Windows CI 控制台默认 cp1252，直接 print 中文会 UnicodeEncodeError
+fix_console_encoding()
 
 from PySide6.QtCore import (
     QBuffer, QCoreApplication, QEventLoop, QIODevice, QRect, Qt, QTimer,
