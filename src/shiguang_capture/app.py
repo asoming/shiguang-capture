@@ -112,16 +112,31 @@ class AppController:
     # ---------- 截图 ----------
     def start_region_capture(self) -> None:
         self._selector = RegionSelector()
-        self._selector.region_selected.connect(self._on_region)
+        self._selector.action_chosen.connect(
+            lambda rect, action: self._dispatch_region(rect, action, long_scroll=False))
         self._selector.show()
 
-    def _on_region(self, rect: Rect) -> None:
+    def _dispatch_region(self, rect: Rect, action: str, long_scroll: bool) -> None:
+        """工具栏动作分发：确认 / 贴图 / 识图 / 翻译。"""
+        if action == "save" and long_scroll:
+            self._start_scroll_session(rect)
+            return
         image = grab_region(rect)
-        if self.config.copy_to_clipboard:
-            QGuiApplication.clipboard().setImage(image)
-        path = self._save(image)
-        self.tray.notify("拾光 Capture", f"截图已保存：{path.name}（已复制到剪贴板）")
         self._last_image = image
+        if action == "save":
+            if self.config.copy_to_clipboard:
+                QGuiApplication.clipboard().setImage(image)
+            path = self._save(image)
+            self.tray.notify("拾光 Capture", f"截图已保存：{path.name}（已复制到剪贴板）")
+        elif action == "pin":
+            self.pin_image(image)
+        elif action == "ocr":
+            self._ocr_image(image)
+        elif action == "translate":
+            self._translate_image(image)
+
+    def _on_region(self, rect: Rect) -> None:  # 兼容旧调用
+        self._dispatch_region(rect, "save", long_scroll=False)
 
     def capture_fullscreen(self) -> None:
         from .capture.grabber import grab_fullscreen
@@ -147,7 +162,8 @@ class AppController:
             self.tray.notify("拾光 Capture", "已有长截图任务进行中")
             return
         self._selector = RegionSelector()
-        self._selector.region_selected.connect(self._start_scroll_session)
+        self._selector.action_chosen.connect(
+            lambda rect, action: self._dispatch_region(rect, action, long_scroll=True))
         self._selector.show()
 
     def _start_scroll_session(self, rect: Rect) -> None:
@@ -198,25 +214,43 @@ class AppController:
         if img is None or img.isNull():
             self.tray.notify("拾光 Capture", "剪贴板中没有图像，也没有最近截图")
             return
+        self._ocr_image(img)
+
+    def _image_to_png_bytes(self, img) -> bytes:
         from PySide6.QtCore import QBuffer, QIODevice
 
         buf = QBuffer()
         buf.open(QIODevice.OpenModeFlag.ReadWrite)
         img.save(buf, "PNG")
+        return bytes(buf.data())
+
+    def _ocr_image(self, img) -> str | None:
+        """对 QImage 执行识别：复制文本 + 通知。返回识别文本（空则 None）。"""
         try:
-            result = self.ocr.recognize(bytes(buf.data()))
+            result = self.ocr.recognize(self._image_to_png_bytes(img))
         except Exception as exc:
             self.tray.notify("拾光 Capture", f"识别失败：{exc}")
-            return
+            return None
         if not result.text.strip():
             self.tray.notify("拾光 Capture", "未识别到文字内容")
-            return
+            return None
         QGuiApplication.clipboard().setText(result.text)
         preview = result.text.strip().splitlines()[0][:30]
         self.tray.notify(
             "拾光 Capture · OCR",
             f"{len(result.text)} 字 · {result.elapsed_ms}ms · {result.engine}（已复制）「{preview}…」",
         )
+        return result.text
+
+    def _translate_image(self, img) -> None:
+        """翻译动作：先本地 OCR 取出原文；翻译引擎属云端能力（V1.x 接入），
+        隐私红线下不默认上传，当前先把原文交给用户。"""
+        text = self._ocr_image(img)
+        if text:
+            self.tray.notify(
+                "拾光 Capture · 翻译",
+                "原文已识别并复制。翻译引擎将在 V1.x 以云端可选方式接入（默认不上传）",
+            )
 
     def recognize(self, png_bytes: bytes, cloud_allowed: bool = False) -> str:
         """识别入口：隐私守卫在前，任何云端后端未获许可不得调用。"""
