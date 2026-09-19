@@ -33,9 +33,22 @@ python -m shiguang_capture   # 启动（托盘常驻）
 | --- | --- |
 | `F1` | 区域截图 |
 | `Shift+F1` | 全屏截图 |
+| `Ctrl+F1` | 滚动长截图（自动滚动 + 拼接 + 实时预览，可随时中止） |
 | `F2` | 取色器 |
 | `F3` | 剪贴板图像贴图 |
+| `F4` | OCR 识别（剪贴板 / 上次截图，本地 RapidOCR 引擎） |
 | `Shift+F3` | 隐藏 / 恢复全部贴图 |
+
+双击托盘图标打开设置（常规 / 热键 / 贴图与取色 / 识别 / 关于与更新）。
+
+## 打包可执行文件
+
+```bash
+pip install pyinstaller
+python scripts/build_exe.py   # 产出 dist/ShiguangCapture/
+```
+
+onedir 目录形态（冷启动快于单文件）。CI 的 package job 在 Windows / macOS / Linux 三平台自动构建并上传 artifact。
 
 仅使用纯逻辑层（无 GUI 依赖，例如做二次开发或 CI）：
 
@@ -62,10 +75,12 @@ src/shiguang_capture/
 ├── config.py        配置与持久化（纯逻辑）
 ├── naming.py        文件命名体系（纯逻辑，截图/录屏共享）
 ├── colors.py        色值换算（纯逻辑）
-├── ocr/base.py      OCR 后端协议 + 隐私红线守卫（纯逻辑）
+├── updater.py       更新检查（纯逻辑 + 网络分离）
+├── autostart.py     开机自启动（Windows 注册表）
+├── ocr/             OCR 后端协议 + 隐私守卫 + RapidOCR 本地引擎
+├── capture/         屏幕抓取 / 取景框 / 滚动拼接（stitch 纯逻辑）
+├── ui/              贴图 / 取色器 / 托盘 / 设置窗 / 长截图预览 / 图标
 ├── hotkeys.py       全局热键（pynput → Qt 信号桥）
-├── capture/         屏幕抓取 + 全屏取景框
-├── ui/              贴图窗口 / 取色器 / 系统托盘
 └── app.py           装配层
 ```
 

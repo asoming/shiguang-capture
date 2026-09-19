@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shiguang-capture"
-version = "1.0.0"
+version = "1.1.0"
 description = "拾光 Capture — 屏幕信息捕获与再利用工具（截/钉/取/录 + 本地 OCR）"
 readme = "README.md"
 license = { text = "MIT" }
@@ -20,9 +20,10 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Multimedia :: Graphics :: Capture :: Screen Capture",
 ]
-# GUI 依赖保持可选：纯逻辑层（geometry/config/naming/colors/ocr.base）零依赖，
+# GUI 依赖保持可选：纯逻辑层（geometry/config/naming/colors/ocr.base/updater）
+# 零依赖；capture/stitch 的拼接算法仅依赖 numpy（OCR 链路同样需要），
 # CI 可在无显示环境下直接跑全部单元测试。
-dependencies = []
+dependencies = ["numpy>=1.26,<3"]
 
 [project.optional-dependencies]
 gui = [
@@ -30,7 +31,9 @@ gui = [
     "pynput>=1.7,<2",
 ]
 ocr = [
-    "rapidocr-onnxruntime>=1.3,<2",
+    "rapidocr-onnxruntime>=1.2,<2",
+    "opencv-python-headless>=4.8",  # 不用 opencv-python：避免其捆绑 Qt 与 PySide6 冲突
+    "PyYAML>=6.0",                  # rapidocr 的隐式依赖（--no-deps 分批安装时发现）
 ]
 dev = [
     "pytest>=8.2,<9",
@@ -38,7 +41,9 @@ dev = [
 all = [
     "PySide6>=6.7,<7",
     "pynput>=1.7,<2",
-    "rapidocr-onnxruntime>=1.3,<2",
+    "rapidocr-onnxruntime>=1.2,<2",
+    "opencv-python-headless>=4.8",
+    "PyYAML>=6.0",
 ]
 
 [project.scripts]

@@ -3,6 +3,6 @@
 截 / 钉 / 取 / 录 一体化，本地 OCR 永久免费。
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __app_name__ = "拾光 Capture"
 __org_name__ = "Shiguang"

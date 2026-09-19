@@ -23,6 +23,7 @@ _HOTKEY_FIELDS = [
     ("pin_last", "贴图（剪贴板图像）"),
     ("color_picker", "取色器"),
     ("hide_all_pins", "隐藏 / 恢复全部贴图"),
+    ("ocr_recognize", "OCR 识别（剪贴板 / 上次截图）"),
 ]
 
 
