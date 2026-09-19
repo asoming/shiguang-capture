@@ -44,6 +44,8 @@ class AppConfig:
     pin_default_opacity: float = 1.0   # 贴图默认透明度（FR-1.23）
     picker_format: str = "hex"         # hex / rgb / hsv（FR 取色格式）
     ocr_engine: str = "local"          # local / cloud（本地优先，FR 隐私红线）
+    target_lang: str = "auto"          # 翻译目标语言：auto / zh / en
+    allow_cloud_translate: bool = False  # 云端翻译总开关（默认关，隐私红线 NFR-6）
     launch_at_login: bool = False
 
     # ---------- 持久化 ----------

@@ -279,16 +279,24 @@
       </div>
     </div>
 
-    <!-- OCR -->
-    <div class="demo reveal">
+    <!-- OCR + 翻译 -->
+    <div class="demo full reveal">
       <div class="demo-icon" style="background:rgba(255,182,72,.13)">🔍</div>
-      <h3>本地 OCR · 代码保真 <span class="badge badge-free">免费</span></h3>
-      <p>框选即识别，识别即结构化。缩进、符号、中英文混排各自走最优识别路由。</p>
-      <div class="demo-stage">
-        <div class="ocr-io">
-          <div class="ocr-img">🖼️<span>报错截图</span></div>
+      <h3>屏幕识图 + 离线翻译 <span class="badge badge-free">免费</span> <span class="badge badge-local">离线</span></h3>
+      <p>框选即识别，识别即结构化。缩进、符号、中英文混排各自走最优识别路由。识别结果直接进结果面板——可选中、可复制、可一键翻译。翻译走本地神经网络模型，文本不出本机。</p>
+      <div class="demo-stage" style="padding:18px">
+        <div class="ocr-io" style="gap:12px">
+          <div class="ocr-img" style="min-height:120px">🖼️<span>截图选区</span></div>
           <span class="ocr-arrow">→</span>
-          <div class="ocr-txt" id="ocrDemoOut"></div>
+          <div style="flex:2.2;display:flex;gap:10px">
+            <div class="ocr-txt" style="min-height:120px" id="ocrDemoOut"></div>
+            <div class="ocr-txt" style="min-height:120px;border-color:var(--brand)" id="transDemoOut"></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <span class="badge badge-local">RapidOCR · ONNX 本地推理</span>
+          <span class="badge badge-local">Argos · 离线神经翻译</span>
+          <span class="badge badge-free">零上传 · 文本不出本机</span>
         </div>
       </div>
     </div>
@@ -458,15 +466,28 @@ pStage.addEventListener('mousemove',e=>{
 pStage.addEventListener('mouseleave',()=>lens.style.display='none');
 pStage.addEventListener('click',()=>toast('已复制色值 '+read.textContent.split(' · ')[0]+' 到剪贴板'));
 
-/* ---------- OCR 演示循环打字 ---------- */
-const demoTxt='def parse(img):\n    text = ocr(img)\n    return to_md(text)';
-const demoOut=document.getElementById('ocrDemoOut');let di=0,del_=false;
+/* ---------- OCR + 翻译 演示：左右对照打字 ---------- */
+const demoPairs=[
+  ['Screenshot tool for Windows, macOS and Linux','Windows、macOS 和 Linux 的截图工具'],
+  ['Press Ctrl+Alt+A to start capture','按 Ctrl+Alt+A 开始截图'],
+  ['Recognize text and translate offline','识别文字并离线翻译'],
+];
+const demoOut=document.getElementById('ocrDemoOut');
+const transOut=document.getElementById('transDemoOut');
+let pairIdx=0,di=0,del_=false;
+const caret='<span class="typing-cursor"></span>';
 (function loop(){
-  if(!del_){di++;if(di>=demoTxt.length+14)del_=true;}
-  else{di--;if(di<=0)del_=false;}
-  const s=demoTxt.slice(0,Math.min(di,demoTxt.length));
-  demoOut.innerHTML=s.replace(/\n/g,'<br>')+'<span class="typing-cursor"></span>';
-  setTimeout(loop,del_?28:70);
+  const [src,dst]=demoPairs[pairIdx];
+  if(!del_){di++;if(di>=src.length+18)del_=true;}
+  else{di--;if(di<=0){del_=false;pairIdx=(pairIdx+1)%demoPairs.length;}}
+  const cut=Math.min(di,src.length);
+  const s=src.slice(0,cut);
+  // 译文按源文进度比例揭开，形成「边识别边翻译」的观感
+  const ratio=cut/src.length;
+  const t=dst.slice(0,Math.floor(dst.length*ratio));
+  demoOut.innerHTML=s.replace(/\n/g,'<br>')+caret;
+  transOut.innerHTML=t.replace(/\n/g,'<br>')+caret;
+  setTimeout(loop,del_?24:62);
 })();
 
 /* ---------- 录屏演示台 ---------- */

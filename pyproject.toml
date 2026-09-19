@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shiguang-capture"
-version = "1.1.0"
-description = "拾光 Capture — 屏幕信息捕获与再利用工具（截/钉/取/录 + 本地 OCR）"
+version = "1.2.0"
+description = "拾光 Capture — 屏幕信息捕获与再利用工具（截/钉/取/录 + 本地 OCR + 离线翻译）"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
@@ -35,6 +35,12 @@ ocr = [
     "opencv-python-headless>=4.8",  # 不用 opencv-python：避免其捆绑 Qt 与 PySide6 冲突
     "PyYAML>=6.0",                  # rapidocr 的隐式依赖（--no-deps 分批安装时发现）
 ]
+translate = [
+    "argostranslate>=1.9,<2",       # 离线神经翻译（CTranslate2 + SentencePiece）
+    "ctranslate2>=4.0",
+    "sentencepiece>=0.2",
+    "stanza>=1.8",                  # argos 的句子边界切分
+]
 dev = [
     "pytest>=8.2,<9",
 ]
@@ -44,6 +50,10 @@ all = [
     "rapidocr-onnxruntime>=1.2,<2",
     "opencv-python-headless>=4.8",
     "PyYAML>=6.0",
+    "argostranslate>=1.9,<2",
+    "ctranslate2>=4.0",
+    "sentencepiece>=0.2",
+    "stanza>=1.8",
 ]
 
 [project.scripts]

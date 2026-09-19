@@ -146,14 +146,51 @@ class SettingsWindow(QDialog):
         idx = self.ocr_combo.findData(self._config.ocr_engine)
         self.ocr_combo.setCurrentIndex(max(idx, 0))
         form.addRow("识别引擎", self.ocr_combo)
+
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItem("自动判定（中↔英互译）", "auto")
+        self.lang_combo.addItem("翻译为中文", "zh")
+        self.lang_combo.addItem("翻译为英文", "en")
+        li = self.lang_combo.findData(getattr(self._config, "target_lang", "auto"))
+        self.lang_combo.setCurrentIndex(max(li, 0))
+        form.addRow("翻译目标语言", self.lang_combo)
+
+        self.cloud_translate_check = QCheckBox("允许云端翻译（默认关闭 · 文本将离开本机）")
+        self.cloud_translate_check.setChecked(
+            getattr(self._config, "allow_cloud_translate", False))
+        form.addRow(self.cloud_translate_check)
+
+        # 离线翻译模型状态
+        self.translate_status = QLabel("")
+        self.translate_status.setWordWrap(True)
+        refresh = QPushButton("检测离线翻译能力")
+        refresh.clicked.connect(self._refresh_translate_status)
+        row = QHBoxLayout()
+        row.addWidget(refresh)
+        row.addWidget(self.translate_status, 1)
+        form.addRow("翻译引擎", row)
+
         note = QLabel(
-            "隐私红线：选择本地引擎时，识别全程在本机完成，不向上传任何图像。\n"
-            "云端引擎仅在你明确开启后才会启用，且识别结果不含任何水印。"
+            "隐私红线：选择本地引擎时，识别与翻译全程在本机完成，不上传任何图像或文本。\n"
+            "离线神经翻译（Argos）需一次性下载中英模型（约 100MB）；未安装时自动降级为术语词典。"
         )
         note.setWordWrap(True)
         note.setStyleSheet("color:#888")
         form.addRow(note)
+        self._refresh_translate_status()
         return w
+
+    def _refresh_translate_status(self) -> None:
+        """检测翻译后端可用性并回显。"""
+        try:
+            from ..translate import argos_available
+
+            if argos_available():
+                self.translate_status.setText("✅ 离线神经翻译已就绪（argos-local）")
+                return
+        except Exception:  # noqa: BLE001
+            pass
+        self.translate_status.setText("⚠️ 未检测到离线模型，当前使用术语词典兜底")
 
     # ================= 关于与更新 =================
     def _build_about(self) -> QWidget:
@@ -197,6 +234,8 @@ class SettingsWindow(QDialog):
         cfg.pin_default_opacity = self.opacity_slider.value() / 100
         cfg.picker_format = self.picker_combo.currentText()
         cfg.ocr_engine = self.ocr_combo.currentData()
+        cfg.target_lang = self.lang_combo.currentData()
+        cfg.allow_cloud_translate = self.cloud_translate_check.isChecked()
         for attr, edit in self._hotkey_edits.items():
             setattr(cfg.hotkeys, attr, edit.text().strip().lower() or getattr(cfg.hotkeys, attr))
 

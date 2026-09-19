@@ -23,18 +23,27 @@ from .grabber import virtual_desktop_rect
 
 _HANDLE_R = 8           # 手柄命中半径（屏幕像素）
 _MIN_W = 8              # 编辑态最小选区
-_TOOLBAR_H = 40
+_TOOLBAR_H = 38
+
+# QQ 截图式工具栏：左侧编辑工具，右侧动作。当前版本先落地动作区
+# （确认/贴图/识图/翻译/长截图/取消），标注工具（矩形/箭头/马赛克/文字）
+# 属 V1.3 独立模块，此处留位不占 UI。
 _ACTIONS = [
-    ("save", "✓ 确认"),
-    ("pin", "📌 贴图"),
-    ("ocr", "🔍 识图"),
-    ("translate", "🌐 翻译"),
-    ("cancel", "✗ 取消"),
+    ("save", "✓", "确认并复制（Enter）"),
+    ("scroll", "⇕", "滚动长截图"),
+    ("pin", "📌", "贴到桌面"),
+    ("ocr", "文", "屏幕识图（提取文字）"),
+    ("translate", "译", "翻译选区文字"),
+    ("cancel", "✕", "取消（Esc）"),
 ]
 
 
 class _Toolbar(QWidget):
-    """选区下方的动作工具栏（子窗口部件，自动处理自身事件）。"""
+    """选区下方的动作工具栏（子窗口部件，自动处理自身事件）。
+
+    QQ 截图的工具栏是「一排图标 + 悬停提示」的形态，这里照搬：
+    图标按钮 + tooltip，确认按钮高亮为主色。
+    """
 
     action_clicked = Signal(str)
 
@@ -44,17 +53,32 @@ class _Toolbar(QWidget):
         self.setStyleSheet(
             "QWidget{background:#1a1f28;border:1px solid #364052;border-radius:8px}"
             "QPushButton{color:#e9edf3;background:transparent;border:none;"
-            "padding:4px 10px;font-size:12px;border-radius:6px}"
+            "padding:4px 8px;font-size:14px;border-radius:6px;min-width:26px}"
             "QPushButton:hover{background:#364052}"
+            "QPushButton#primary{background:#5f80f5;color:#ffffff;font-weight:600}"
+            "QPushButton#primary:hover{background:#7190ff}"
+            "QPushButton#danger:hover{background:#7a2b2e}"
         )
         row = QHBoxLayout(self)
         row.setContentsMargins(6, 4, 6, 4)
         row.setSpacing(2)
-        for action, label in _ACTIONS:
+        for action, label, tip in _ACTIONS:
             btn = QPushButton(label)
+            btn.setToolTip(tip)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            if action == "save":
+                btn.setObjectName("primary")
+            elif action == "cancel":
+                btn.setObjectName("danger")
             btn.clicked.connect(lambda _=False, a=action: self.action_clicked.emit(a))
             row.addWidget(btn)
+            if action in ("pin", "ocr"):
+                # 分组视觉分隔（对齐 QQ 截图：编辑 / 识别 / 输出 三段）
+                sep = QWidget()
+                sep.setFixedWidth(1)
+                sep.setStyleSheet(
+                    "background:#364052;margin-top:6px;margin-bottom:6px")
+                row.addWidget(sep)
 
 
 class RegionSelector(QWidget):

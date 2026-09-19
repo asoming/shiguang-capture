@@ -38,6 +38,15 @@ class HotkeyManager:
 
     def register(self, mapping: dict[str, str]) -> bool:
         """mapping: {action: key}，如 {'capture_region': 'f1'}。返回是否成功。"""
+        import os
+
+        if os.environ.get("SHIGUANG_NO_HOTKEYS"):
+            log.info("热键已按环境变量 SHIGUANG_NO_HOTKEYS 禁用")
+            return False
+        if os.environ.get("QT_QPA_PLATFORM") in ("offscreen", "minimal"):
+            # 无头/离屏环境没有可挂的消息循环，启动 pynput 监听会段错误
+            log.info("离屏环境，跳过全局热键注册")
+            return False
         try:
             from pynput import keyboard
         except ImportError:

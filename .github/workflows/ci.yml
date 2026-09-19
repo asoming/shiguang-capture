@@ -47,7 +47,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          python -c "from shiguang_capture.app import AppController; from shiguang_capture.capture.selector import RegionSelector; from shiguang_capture.capture.scroller import ScrollCaptureSession; from shiguang_capture.ui.pin_window import PinWindow; from shiguang_capture.ui.picker import ColorPickerOverlay; from shiguang_capture.ui.settings_window import SettingsWindow; from shiguang_capture.ui.scroll_preview import ScrollPreviewWindow; from shiguang_capture.hotkeys import HotkeyManager; print('qt-smoke OK')"
+          python -c "from shiguang_capture.app import AppController; from shiguang_capture.capture.selector import RegionSelector; from shiguang_capture.capture.scroller import ScrollCaptureSession; from shiguang_capture.ui.pin_window import PinWindow; from shiguang_capture.ui.picker import ColorPickerOverlay; from shiguang_capture.ui.settings_window import SettingsWindow; from shiguang_capture.ui.scroll_preview import ScrollPreviewWindow; from shiguang_capture.ui.result_panel import ResultPanel; from shiguang_capture.ui.busy import BusyIndicator; from shiguang_capture.hotkeys import HotkeyManager; print('qt-smoke OK')"
       - name: CLI self-check
         env:
           QT_QPA_PLATFORM: offscreen
@@ -56,6 +56,11 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python scripts/smoke_ocr.py
+      - name: Recognition + translation chain smoke
+        env:
+          QT_QPA_PLATFORM: offscreen
+          SHIGUANG_NO_HOTKEYS: "1"
+        run: python scripts/smoke_ocr_translate.py
 
   # 打包产物：三平台各自构建可运行目录并上传 artifact
   package:

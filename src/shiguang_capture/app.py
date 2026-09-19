@@ -42,6 +42,18 @@ class _UpdateBridge(QObject):
     finished = Signal(object)  # UpdateInfo | None
 
 
+class _RecognitionBridge(QObject):
+    """识别工作线程 → Qt 主线程的结果桥。
+
+    必须由 AppController 持强引用直到工作线程结束：Qt 的 QObject 一旦被
+    Python GC 回收，底层 C++ 对象即销毁，线程再 emit 就是野指针访问。
+    """
+
+    ok = Signal(object)   # OCRResult
+    err = Signal(str)
+    done = Signal()       # 线程收尾（无论成败）
+
+
 class AppController:
     def __init__(self, qt_app: QApplication, config: AppConfig | None = None,
                  ocr_backend: OCRBackend | None = None) -> None:
@@ -56,6 +68,7 @@ class AppController:
         self._settings: SettingsWindow | None = None
         self._scroll_session: ScrollCaptureSession | None = None
         self._scroll_preview: ScrollPreviewWindow | None = None
+        self._recognition_bridges: list[_RecognitionBridge] = []
         self._last_image = None
 
         self.tray = TrayIcon()
@@ -117,7 +130,10 @@ class AppController:
         self._selector.show()
 
     def _dispatch_region(self, rect: Rect, action: str, long_scroll: bool) -> None:
-        """工具栏动作分发：确认 / 贴图 / 识图 / 翻译。"""
+        """工具栏动作分发：确认 / 长截图 / 贴图 / 识图 / 翻译。"""
+        if action == "scroll":
+            self._start_scroll_session(rect)
+            return
         if action == "save" and long_scroll:
             self._start_scroll_session(rect)
             return
@@ -131,9 +147,9 @@ class AppController:
         elif action == "pin":
             self.pin_image(image)
         elif action == "ocr":
-            self._ocr_image(image)
+            self._run_ocr_action(image)
         elif action == "translate":
-            self._translate_image(image)
+            self._run_translate_action(image)
 
     def _on_region(self, rect: Rect) -> None:  # 兼容旧调用
         self._dispatch_region(rect, "save", long_scroll=False)
@@ -198,14 +214,18 @@ class AppController:
         self.tray.notify("拾光 Capture", f"长截图失败：{msg}")
 
     # ---------- OCR ----------
-    @property
-    def ocr(self) -> OCRBackend:
-        """惰性创建识别后端（RapidOCR 首次加载 1-3s，不阻塞启动）。"""
+    def _ocr_sync(self) -> OCRBackend:
+        """同步创建识别后端（RapidOCR 首次加载 1-3s）。"""
         if self._ocr_override is not None:
             return self._ocr_override
         if self._ocr is None:
             self._ocr = create_backend(self.config.ocr_engine)
         return self._ocr
+
+    @property
+    def ocr(self) -> OCRBackend:
+        """惰性创建识别后端（RapidOCR 首次加载 1-3s，不阻塞启动）。"""
+        return self._ocr_sync()
 
     def ocr_recognize(self) -> None:
         img = QGuiApplication.clipboard().image()
@@ -242,15 +262,121 @@ class AppController:
         )
         return result.text
 
-    def _translate_image(self, img) -> None:
-        """翻译动作：先本地 OCR 取出原文；翻译引擎属云端能力（V1.x 接入），
-        隐私红线下不默认上传，当前先把原文交给用户。"""
-        text = self._ocr_image(img)
-        if text:
-            self.tray.notify(
-                "拾光 Capture · 翻译",
-                "原文已识别并复制。翻译引擎将在 V1.x 以云端可选方式接入（默认不上传）",
-            )
+    # ---------- 识图 / 翻译（QQ 截图同款结果面板）----------
+    def _run_ocr_action(self, img) -> None:
+        """工具栏「识图」：后台识别 → 结果面板（可选中复制 / 翻译 / 重新识别）。"""
+        from .ui.busy import BusyIndicator
+        from .ui.result_panel import ResultPanel
+
+        indicator = BusyIndicator("正在识别文字…")
+        result: dict = {"panel": None, "image": img}
+
+        def rerun() -> None:
+            self._run_ocr_action(img)
+
+        def on_ok(r) -> None:
+            indicator.close()
+            if not r.text.strip():
+                self.tray.notify("拾光 Capture", "未识别到文字内容")
+                return
+            QGuiApplication.clipboard().setText(r.text)
+            panel = result["panel"]
+            if panel is None:
+                panel = ResultPanel(
+                    delegate=lambda image, mode: self._spectrum_delegate(image, mode, rerun))
+                result["panel"] = panel
+            panel.set_image(img)
+            panel.show_result("ocr", r)
+            panel.show()
+            panel.raise_()
+
+        def on_err(msg: str) -> None:
+            indicator.close()
+            self.tray.notify("拾光 Capture", f"识别失败：{msg}")
+
+        self._spawn_recognition(img, indicator, on_ok, on_err)
+
+    def _run_translate_action(self, img) -> None:
+        """工具栏「翻译」：OCR 取原文 → 本地/云端翻译 → 双语对照面板。
+
+        翻译引擎默认走 config.ocr_engine 同源的本地链路；云端后端需
+        config.allow_cloud_translate 显式许可（隐私红线，见 PRD NFR-6）。
+        """
+        from .ui.busy import BusyIndicator
+        from .ui.result_panel import ResultPanel
+        from .translate import translate_text
+
+        indicator = BusyIndicator("正在识别并翻译…")
+        result: dict = {"panel": None, "image": img}
+
+        def rerun() -> None:
+            self._run_translate_action(img)
+
+        def on_ok(r) -> None:
+            indicator.close()
+            if not r.text.strip():
+                self.tray.notify("拾光 Capture", "未识别到文字内容，无法翻译")
+                return
+            try:
+                tr = translate_text(r.text, self.config,
+                                    allow_cloud=self.config.allow_cloud_translate)
+            except Exception as exc:  # noqa: BLE001
+                self.tray.notify("拾光 Capture", f"翻译失败：{exc}")
+                return
+            QGuiApplication.clipboard().setText(tr.target_text)
+            panel = result["panel"]
+            if panel is None:
+                panel = ResultPanel(
+                    delegate=lambda image, mode: self._spectrum_delegate(image, mode, rerun))
+                result["panel"] = panel
+            panel.set_image(img)
+            panel.show_translation(r, tr)
+            panel.show()
+            panel.raise_()
+
+        def on_err(msg: str) -> None:
+            indicator.close()
+            self.tray.notify("拾光 Capture", f"识别失败：{msg}")
+
+        self._spawn_recognition(img, indicator, on_ok, on_err)
+
+    def _spectrum_delegate(self, image, mode: str, rerun) -> None:
+        """结果面板里的「重新识别 / 翻译」委托回调。"""
+        if mode == "ocr":
+            self._run_ocr_action(image)
+        elif mode == "translate":
+            self._run_translate_action(image)
+
+    def _spawn_recognition(self, img, indicator, on_ok, on_err):
+        """把识别放后台线程，经 Qt 信号回主线程（Windows 下引擎加载 >1s）。
+
+        注意：bridge 必须由 controller 持引用直到线程结束——否则 Python GC
+        会销毁底层 QObject，工作线程 emit 时触发访问违例（进程崩溃）。
+        """
+        bridge = _RecognitionBridge()
+        png = self._image_to_png_bytes(img)
+        # 持有引用，避免 GC；线程结束后由 finished 信号清理
+        self._recognition_bridges.append(bridge)
+
+        def cleanup() -> None:
+            if bridge in self._recognition_bridges:
+                self._recognition_bridges.remove(bridge)
+
+        bridge.done.connect(cleanup)
+
+        def worker() -> None:
+            try:
+                backend = self._ocr_sync()
+                bridge.ok.emit(backend.recognize(png))
+            except Exception as exc:  # noqa: BLE001
+                bridge.err.emit(str(exc))
+            finally:
+                bridge.done.emit()
+
+        bridge.ok.connect(on_ok)
+        bridge.err.connect(on_err)
+        threading.Thread(target=worker, daemon=True).start()
+        return bridge
 
     def recognize(self, png_bytes: bytes, cloud_allowed: bool = False) -> str:
         """识别入口：隐私守卫在前，任何云端后端未获许可不得调用。"""
