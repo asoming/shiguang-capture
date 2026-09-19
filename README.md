@@ -45,10 +45,13 @@ pip install -e .
 
 ## 产品站
 
-`site/` 为静态产品站（深色主题默认，可切浅色），本地预览：
+`docs/` 为静态产品站（深色主题默认，可切浅色），已通过 GitHub Pages 发布：
+**https://asoming.github.io/shiguang-capture/**
+
+本地预览：
 
 ```bash
-python -m http.server 8080 -d site
+python -m http.server 8080 -d docs
 ```
 
 ## 架构

@@ -12,7 +12,7 @@ import sys
 from html.parser import HTMLParser
 from pathlib import Path
 
-SITE = Path(__file__).resolve().parent.parent / "site"
+SITE = Path(__file__).resolve().parent.parent / "docs"
 PAGES = ["index.html", "features.html", "pricing.html", "download.html"]
 
 

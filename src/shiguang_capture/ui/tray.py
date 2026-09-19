@@ -1,19 +1,19 @@
 """ui/tray.py — 系统托盘（常驻入口，截图工具的标准形态）。"""
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 
 def make_icon(size: int = 64) -> QIcon:
-    """程序内绘制的简易图标：紫蓝渐变圆角方块 + 剪刀符号。"""
+    """程序内绘制的简易图标：紫蓝渐变圆角方块 + S 字母。"""
     pix = QPixmap(size, size)
     pix.fill(QColor(0, 0, 0, 0))
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setBrush(QColor(95, 128, 245))
-    p.setPen(Qt.GlobalColor.transparent if hasattr(Qt, "GlobalColor") else QColor(0, 0, 0, 0))
+    p.setPen(Qt.PenStyle.NoPen)
     p.drawRoundedRect(2, 2, size - 4, size - 4, size // 4, size // 4)
     p.setPen(QColor(255, 255, 255))
     font = p.font()
