@@ -1,0 +1,12 @@
+# 跨平台行尾归一：仓库内统一 LF，Windows 检出时按需转换
+* text=auto
+
+# Windows 专属文件保持 CRLF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
