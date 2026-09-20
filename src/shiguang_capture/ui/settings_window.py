@@ -49,8 +49,6 @@ class SettingsWindow(QDialog):
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 24, 24, 20)
         root.setSpacing(18)
-        root.addWidget(QLabel("拾光  /  偏好设置", objectName="brand"))
-        root.addWidget(QLabel("让工具适应你的习惯。", objectName="title"))
         tabs = QTabWidget()
         tabs.addTab(self._build_general(), "常规")
         tabs.addTab(self._build_hotkeys(), "热键")
@@ -59,7 +57,7 @@ class SettingsWindow(QDialog):
         tabs.addTab(self._build_about(), "关于与更新")
         root.addWidget(tabs)
 
-        self.status = QLabel("设置仅在保存成功后生效。", objectName="muted")
+        self.status = QLabel('', objectName="muted")
         self.status.setWordWrap(True)
         root.addWidget(self.status)
         buttons = QHBoxLayout()

@@ -51,7 +51,7 @@ class RapidOCRBackend:
         self._engine = RapidOCR(
             rec_model_path=str(self._data.joinpath('PP-OCRv5_mobile_rec_onnx.onnx')),
             rec_keys_path=str(self._data.joinpath('PP-OCRv5_mobile_rec_onnx-keys.txt')),
-            intra_op_num_threads=2, inter_op_num_threads=1)
+            intra_op_num_threads=2, inter_op_num_threads=1, det_limit_type='max')
         self._english = None
         log.info('本地 OCR 引擎已加载')
 

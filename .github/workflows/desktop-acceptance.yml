@@ -45,7 +45,7 @@ jobs:
         run: python scripts/accept_desktop_recording.py artifacts/native-recording
       - name: Record native Linux window
         if: runner.os == 'Linux'
-        run: xvfb-run -a -s '-screen 0 1280x800x24' sh -c 'openbox >/tmp/shiguang-openbox.log 2>&1 & python scripts/accept_desktop_recording.py artifacts/native-window --window'
+        run: xvfb-run -a -s '-screen 0 1280x800x24' sh -c 'openbox --sm-disable >artifacts/openbox.log 2>&1 & sleep 2; xprop -root _NET_SUPPORTING_WM_CHECK; python scripts/accept_desktop_recording.py artifacts/native-window --window'
       - name: Record native Windows or macOS window
         if: runner.os != 'Linux'
         run: python scripts/accept_desktop_recording.py artifacts/native-window --window
