@@ -503,7 +503,7 @@ class AppController:
             else:
                 panel.show_result(mode, result)
             if not result.text.strip():
-                panel.gloss.setText('未识别到文字。请使用更清晰的图片重试。')
+                panel.show_error('未识别到文字。请使用更清晰的图片重试。')
         def on_error(message):
             if not self._closing and task_id == self._task_id:
                 panel.set_busy(False)

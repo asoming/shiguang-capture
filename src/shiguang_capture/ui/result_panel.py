@@ -290,7 +290,7 @@ class ResultPanel(QWidget):
         try:
             self._copy_source_checked()
         except RuntimeError as exc:
-            self.gloss.setText(str(exc))
+            self.show_error(str(exc))
 
     def _copy_source_checked(self):
         output = self.output_format.currentData()
@@ -305,7 +305,7 @@ class ResultPanel(QWidget):
                 try:
                     plain, rich = table_clipboard(cells)
                 except ValueError as exc:
-                    self.gloss.setText(str(exc))
+                    self.show_error(str(exc))
                     return
                 write_text(plain, rich)
                 self.gloss.setText('表格已复制。编号和日期需完全保真时，请优先导出 XLSX。')
@@ -321,14 +321,14 @@ class ResultPanel(QWidget):
             write_text(self.target_edit.toPlainText())
             self.gloss.setText('译文已复制。')
         except RuntimeError as exc:
-            self.gloss.setText(str(exc))
+            self.show_error(str(exc))
 
     def _copy_image(self):
         try:
             write_image(self.canvas.rendered_image())
             self.gloss.setText('图片已复制')
         except (RuntimeError, ValueError) as exc:
-            self.gloss.setText(str(exc))
+            self.show_error(str(exc))
 
     def _restore(self):
         if self._result:
@@ -394,7 +394,7 @@ class ResultPanel(QWidget):
                 try:
                     self._write_output(path, xlsx_bytes(self._table_cells()))
                 except (OSError, ValueError) as exc:
-                    self.gloss.setText('导出失败，请检查单元格内容或另选位置。')
+                    self.show_error('导出失败，请检查单元格内容或另选位置。')
             return
         path, _ = QFileDialog.getSaveFileName(self, '导出校对后的文本', '识别结果.txt', '文本 (*.txt);;Markdown (*.md)')
         if not path:
@@ -407,13 +407,16 @@ class ResultPanel(QWidget):
     def _write_output(self, path, data):
         output = QSaveFile(path)
         if not output.open(QIODevice.OpenModeFlag.WriteOnly):
-            self.gloss.setText('无法写入此位置，请重新选择。')
+            self.show_error('无法写入此位置，请重新选择。')
             return
         if output.write(data) != len(data):
             output.cancelWriting()
-            self.gloss.setText('导出失败，请检查可用空间。')
+            self.show_error('导出失败，请检查可用空间。')
             return
-        self.gloss.setText('文件已导出。' if output.commit() else '导出失败，请另选位置。')
+        if output.commit():
+            self.gloss.setText('文件已导出。')
+        else:
+            self.show_error('导出失败，请另选位置。')
 
     def _populate_blocks(self):
         self.block_combo.blockSignals(True)

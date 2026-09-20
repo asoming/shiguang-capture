@@ -118,11 +118,11 @@ def main() -> int:
     print(f"           词条 {tr.glossary_hits[:4]}")
 
     # ---- 3. 复制/交换/重新识别 ----
-    panel.copy_target.click()
+    panel.copy_target.trigger()
     pump(30)
     if QApplication.clipboard().text() != tr.target_text:
         problems.append("复制译文未写入剪贴板")
-    panel.swap_btn.click()
+    panel.swap_btn.trigger()
     pump(20)
     if panel.source_edit.toPlainText() != tr.target_text:
         problems.append("交换左右内容失败")
@@ -132,7 +132,7 @@ def main() -> int:
     p2 = ResultPanel(delegate=lambda img, mode: retry_calls.append((img, mode)))
     p2.set_image(make_text_image())
     p2.show_result("ocr", r)
-    p2.retry_btn.click()
+    p2.retry_btn.trigger()
     pump(20)
     if len(retry_calls) != 1 or retry_calls[0][1] != "ocr":
         problems.append(f"「重新识别」委托未正确回调：{retry_calls}")

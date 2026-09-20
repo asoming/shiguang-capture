@@ -97,7 +97,11 @@ class ImageCanvas(QWidget):
     def text_bounds(self, mark):
         font = QFont('Noto Sans CJK SC')
         font.setPixelSize(max(18, round(max(2, self.image.width()/450)*7)))
-        return QFontMetricsF(font).boundingRect(mark.text).translated(mark.points[0]).adjusted(-5, -5, 5, 5)
+        metrics = QFontMetricsF(font)
+        # Use typographic advances rather than glyph ink bounds. Missing glyphs
+        # in a platform font backend can produce an invalid ink-box origin.
+        box = QRectF(0, -metrics.ascent(), max(1, metrics.horizontalAdvance(mark.text)), metrics.height())
+        return box.translated(mark.points[0]).adjusted(-5, -5, 5, 5)
 
     def rendered_image(self):
         result = self.image.copy()
