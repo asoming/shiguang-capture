@@ -219,8 +219,6 @@ def resolve_direction(text: str, config) -> tuple[str, str]:
     src = detect_language(text)
     pref = getattr(config, "target_lang", "auto")
     if pref in ("zh", "en"):
-        if src == pref:
-            src = "en" if pref == "zh" else "zh"
         return src, pref
     if src == "zh":
         return "zh", "en"
@@ -234,6 +232,8 @@ def translate_text(text: str, config, *, allow_cloud: bool = False) -> Translati
         raise PermissionError("云端翻译未获显式许可，已阻止外发（PRD NFR-6）")
 
     src, target = resolve_direction(text, config)
+    if src == target:
+        return TranslationResult(text, text, src, target, "same-language")
 
     # 后端不支持该语言对时，回落到词典（不静默返回原文）
     if isinstance(backend, ArgosBackend) and not backend.supports(src, target):

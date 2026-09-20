@@ -19,22 +19,22 @@ from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget
 
 from ..colors import rgb_to_hex
 from ..geometry import Rect
-from .grabber import virtual_desktop_rect
+from .grabber import virtual_desktop_rect, capture_frames, compose_region
+from ..ui.theme import STYLE
 
 _HANDLE_R = 8           # 手柄命中半径（屏幕像素）
 _MIN_W = 8              # 编辑态最小选区
 _TOOLBAR_H = 38
 
-# QQ 截图式工具栏：左侧编辑工具，右侧动作。当前版本先落地动作区
-# （确认/贴图/识图/翻译/长截图/取消），标注工具（矩形/箭头/马赛克/文字）
-# 属 V1.3 独立模块，此处留位不占 UI。
+# Every action has one explicit output; annotation opens the image workbench.
 _ACTIONS = [
-    ("save", "✓", "确认并复制（Enter）"),
-    ("scroll", "⇕", "滚动长截图"),
-    ("pin", "📌", "贴到桌面"),
-    ("ocr", "文", "屏幕识图（提取文字）"),
-    ("translate", "译", "翻译选区文字"),
-    ("cancel", "✕", "取消（Esc）"),
+    ("edit", "标注", "打开工作台标注与校对"),
+    ("pin", "贴图", "贴到桌面"),
+    ("ocr", "提取文字", "本地识别，完成后手动复制"),
+    ("scroll", "长截图", "滚动长截图 · 实验"),
+    ("save", "保存…", "选择文件位置"),
+    ("copy", "复制", "复制图片（Enter），不自动保存"),
+    ("cancel", "取消", "取消（Esc）"),
 ]
 
 
@@ -49,16 +49,8 @@ class _Toolbar(QWidget):
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
-        self.setFixedHeight(_TOOLBAR_H)
-        self.setStyleSheet(
-            "QWidget{background:#1a1f28;border:1px solid #364052;border-radius:8px}"
-            "QPushButton{color:#e9edf3;background:transparent;border:none;"
-            "padding:4px 8px;font-size:14px;border-radius:6px;min-width:26px}"
-            "QPushButton:hover{background:#364052}"
-            "QPushButton#primary{background:#5f80f5;color:#ffffff;font-weight:600}"
-            "QPushButton#primary:hover{background:#7190ff}"
-            "QPushButton#danger:hover{background:#7a2b2e}"
-        )
+        self.setFixedHeight(48)
+        self.setStyleSheet(STYLE + "QWidget{background:#EDF3F7;} QPushButton{padding:5px 9px;}")
         row = QHBoxLayout(self)
         row.setContentsMargins(6, 4, 6, 4)
         row.setSpacing(2)
@@ -66,7 +58,7 @@ class _Toolbar(QWidget):
             btn = QPushButton(label)
             btn.setToolTip(tip)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            if action == "save":
+            if action == "copy":
                 btn.setObjectName("primary")
             elif action == "cancel":
                 btn.setObjectName("danger")
@@ -89,8 +81,9 @@ class RegionSelector(QWidget):
     MAG_SIZE = 120
     MAG_CELLS = 15
 
-    def __init__(self) -> None:
+    def __init__(self, frames=None) -> None:
         super().__init__()
+        self._frames = capture_frames() if frames is None else frames
         bounds = virtual_desktop_rect()
         self._bounds = bounds
         self.setGeometry(bounds.x, bounds.y, bounds.width, bounds.height)
@@ -109,7 +102,7 @@ class RegionSelector(QWidget):
         self._active_handle: str | None = None
         self._move_offset: QPoint | None = None
         self._cursor: QPoint | None = None
-        self._snapshot: QImage | None = None     # 全屏缓存快照
+        self._snapshot: QImage | None = compose_region(self._frames, bounds, density=1)     # 全屏缓存快照
 
         self._toolbar = _Toolbar(self)
         self._toolbar.action_clicked.connect(self._on_action)
@@ -123,17 +116,14 @@ class RegionSelector(QWidget):
             self._snapshot = self._grab_full_snapshot()
 
     def _grab_full_snapshot(self) -> QImage:
-        """打开时一次性抓取虚拟桌面（之后的所有绘制都读这份缓存）。"""
-        b = self._bounds
-        img = QImage(b.width, b.height, QImage.Format.Format_RGB888)
-        img.fill(QColor(20, 22, 26))
-        p = QPainter(img)
-        for screen in QGuiApplication.screens():
-            g = screen.geometry()
-            pix = screen.grabWindow(0).toImage()
-            p.drawImage(g.x() - b.x, g.y() - b.y, pix)
-        p.end()
-        return img
+        return compose_region(self._frames, self._bounds, density=1)
+
+    def selected_image(self, rect: Rect) -> QImage:
+        return compose_region(self._frames, rect)
+
+    def closeEvent(self, event):
+        self.cancelled.emit()
+        super().closeEvent(event)
 
     # ---------- 坐标换算 ----------
     def _to_local(self, global_pos: QPoint) -> QPoint:
@@ -278,7 +268,7 @@ class RegionSelector(QWidget):
             return
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if self._state == self.EDITING and self._sel:
-                self._finish("save")
+                self._finish("copy")
             return
         nudge = {
             Qt.Key.Key_Left: (-1, 0), Qt.Key.Key_Right: (1, 0),

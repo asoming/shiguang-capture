@@ -14,6 +14,25 @@ from PySide6.QtCore import QObject, Signal
 log = logging.getLogger(__name__)
 
 
+class ChordMatcher:
+    """Match the entire held chord, so Shift+F1 cannot also activate F1."""
+
+    def __init__(self, actions):
+        self.actions = actions
+        self.pressed = set()
+
+    def press(self, key):
+        if key in self.pressed:
+            return
+        self.pressed.add(key)
+        callback = self.actions.get(frozenset(self.pressed))
+        if callback:
+            callback()
+
+    def release(self, key):
+        self.pressed.discard(key)
+
+
 class HotkeyBridge(QObject):
     """把 pynput 的回调桥接为 Qt 信号（线程安全）。"""
 
@@ -52,18 +71,24 @@ class HotkeyManager:
         except ImportError:
             log.warning("pynput 未安装，全局热键不可用（pip install pynput）")
             return False
-        self.unregister()
-        hotkeys = {
-            self._to_pynput(key): (lambda a=action: self.bridge.fire(a))
-            for action, key in mapping.items()
-        }
         try:
-            self._listener = keyboard.GlobalHotKeys(hotkeys)
-            self._listener.start()
+            actions = {}
+            for action, key in mapping.items():
+                chord = frozenset(keyboard.HotKey.parse(self._to_pynput(key)))
+                if not chord or chord in actions:
+                    raise ValueError("快捷键为空或重复")
+                actions[chord] = lambda a=action: self.bridge.fire(a)
+            matcher = ChordMatcher(actions)
+            candidate = keyboard.Listener(
+                on_press=lambda key: matcher.press(candidate.canonical(key)),
+                on_release=lambda key: matcher.release(candidate.canonical(key)),
+            )
+            candidate.start()
         except Exception as exc:  # 平台权限不足（如 macOS 辅助功能未授权）
             log.error("全局热键注册失败: %s", exc)
-            self._listener = None
             return False
+        self.unregister()
+        self._listener = candidate
         return True
 
     def unregister(self) -> None:

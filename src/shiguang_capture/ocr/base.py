@@ -14,10 +14,13 @@ from typing import Protocol, runtime_checkable
 @dataclass
 class OCRResult:
     text: str
-    confidence: float                      # 0.0 ~ 1.0
+    confidence: float | None               # unknown is not a numeric confidence
     blocks: list[dict] = field(default_factory=list)  # 版面块（表格/代码/段落）
     engine: str = "unknown"
     elapsed_ms: int = 0
+    mode: str = "ocr"
+    table: object | None = None
+    model_version: str = "PP-OCRv4 / RapidOCR 1.4.4"
 
 
 @runtime_checkable

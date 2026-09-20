@@ -1,0 +1,844 @@
+{
+  "corpus": "Synthetic v1; 39 images; not a representative production benchmark. Source text and generator MIT.",
+  "summary": {
+    "ocr": {
+      "samples": 18,
+      "exact": 8,
+      "median_ms": 1884.5,
+      "character_error_rate": 0.04590818363273453,
+      "nonspace_character_error_rate": 0.0022371364653243847
+    },
+    "code": {
+      "samples": 12,
+      "exact": 5,
+      "median_ms": 450.0,
+      "character_error_rate": 0.03689064558629776,
+      "nonspace_character_error_rate": 0.01282051282051282
+    },
+    "table": {
+      "samples": 9,
+      "exact": 6,
+      "median_ms": 578,
+      "structure_accuracy": 1.0,
+      "cell_accuracy": 0.9666666666666667
+    }
+  },
+  "results": [
+    {
+      "id": "text-22-0",
+      "mode": "ocr",
+      "sha256": "5abeaf73cf1f88b537e0e0e594a54ca5db6649300ed31c5149cb7eb1c3cffddb",
+      "expected": "拾光截图工具，所有识别均在本机完成。",
+      "actual": "拾光截图工具，\n所有识别均在本机完成。",
+      "exact": false,
+      "elapsed_ms": 1847,
+      "edit_distance": 1,
+      "characters": 18,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 18
+    },
+    {
+      "id": "text-22-1",
+      "mode": "ocr",
+      "sha256": "881f12a73a3240c1edf24d2147aab4acf17eae204b61b70d17bf82f2329e7b5f",
+      "expected": "订单编号 00123456789，金额 128.50 元。",
+      "actual": "订单编号00123456789，金\n金额128.50元。",
+      "exact": false,
+      "elapsed_ms": 1751,
+      "edit_distance": 5,
+      "characters": 29,
+      "nonspace_edit_distance": 1,
+      "nonspace_characters": 26
+    },
+    {
+      "id": "text-22-2",
+      "mode": "ocr",
+      "sha256": "3c163c0167f9ef8a5cf22e70187a4bba1781beaecb122db5a35135fc7ddb531d",
+      "expected": "Open image, review the result, then copy.",
+      "actual": "Open image, review the result, then copy.",
+      "exact": true,
+      "elapsed_ms": 2006,
+      "edit_distance": 0,
+      "characters": 41,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 35
+    },
+    {
+      "id": "text-22-3",
+      "mode": "ocr",
+      "sha256": "e69f82f6f7213070d7a13950a0709febcb2ef0b230f696e21d87da0de8cc3dde",
+      "expected": "Local OCR 2026: privacy and reliability.",
+      "actual": "Local OCR 2026: privacy and reliability.",
+      "exact": true,
+      "elapsed_ms": 1234,
+      "edit_distance": 0,
+      "characters": 40,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 35
+    },
+    {
+      "id": "text-22-4",
+      "mode": "ocr",
+      "sha256": "1213fdb8c157c6896eea06d7a3d5a663d3b6e73271a84c83e76136c4fbde837e",
+      "expected": "截图之后可以标注、保存和复制。",
+      "actual": "截图之后可以标注、\n保存和复制。",
+      "exact": false,
+      "elapsed_ms": 1464,
+      "edit_distance": 1,
+      "characters": 15,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 15
+    },
+    {
+      "id": "text-22-5",
+      "mode": "ocr",
+      "sha256": "c1e8ba8c43338da7f5c4b603d61de4dff9a2a8e116bceb8a4f4a58431a19caa8",
+      "expected": "Test 00123 ABC abc 98765",
+      "actual": "Test00123ABCabc98765",
+      "exact": false,
+      "elapsed_ms": 1128,
+      "edit_distance": 4,
+      "characters": 24,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 20
+    },
+    {
+      "id": "code-22-6",
+      "mode": "code",
+      "sha256": "e16eb926e9beb15b92de094872b27b2e5004a0c7f185ee62499d88ad9ba619bb",
+      "expected": "def total(items):\n    value = 0\n    for item in items:\n        value += item\n    return value",
+      "actual": "def total(items):\n    value=0\n    for item initems:\n       value+=item\n    returnvalue",
+      "exact": false,
+      "elapsed_ms": 376,
+      "edit_distance": 7,
+      "characters": 93,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 60
+    },
+    {
+      "id": "code-22-7",
+      "mode": "code",
+      "sha256": "10043cc0aefa31b66020ea416d0c232543d31b9dc3e54da46822d93fa2fa94a3",
+      "expected": "if ready:\n    print(\"hello\")\nelse:\n    print(\"waiting\")",
+      "actual": "ifready:\n    print(\"hello\")\nelse:\n    print(\"waiting\")",
+      "exact": false,
+      "elapsed_ms": 344,
+      "edit_distance": 1,
+      "characters": 55,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 43
+    },
+    {
+      "id": "code-22-8",
+      "mode": "code",
+      "sha256": "e4a7d731da22416b752fcf6b6a51236648a7e0b8b0708d0c6ea6baa09ed5b105",
+      "expected": "data = [1, 2, 3]\nfor x in data:\n    print(x * 2)",
+      "actual": "data = [1,2,3]\nfor x in data:\n    print(x（*2)",
+      "exact": false,
+      "elapsed_ms": 397,
+      "edit_distance": 4,
+      "characters": 48,
+      "nonspace_edit_distance": 1,
+      "nonspace_characters": 33
+    },
+    {
+      "id": "code-22-9",
+      "mode": "code",
+      "sha256": "4d95f8ddf78d42b882d3708481eaf1b8701522073bf16283c8168ed02dac76ad",
+      "expected": "ERROR 2026-09-20\n    path=/tmp/test.log\n    retry_count=3",
+      "actual": "ERROR 2026-09-20\n    path=/tmp/test.log\n    retry_count=3",
+      "exact": true,
+      "elapsed_ms": 464,
+      "edit_distance": 0,
+      "characters": 57,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 46
+    },
+    {
+      "id": "table-22-0",
+      "mode": "table",
+      "sha256": "66be625964730743bb838d7e4440267e069caccb8ab4e2af01ec98137575fbb8",
+      "expected": [
+        [
+          "ID",
+          "Name",
+          "Value"
+        ],
+        [
+          "00123",
+          "Alice",
+          "128.50"
+        ],
+        [
+          "00987",
+          "Bob",
+          ""
+        ]
+      ],
+      "actual": [
+        [
+          "ID",
+          "Name",
+          "Value"
+        ],
+        [
+          "00123",
+          "Alice",
+          "128.50"
+        ],
+        [
+          "00987",
+          "Bob",
+          ""
+        ]
+      ],
+      "exact": true,
+      "elapsed_ms": 621,
+      "shape_correct": true,
+      "cells_correct": 9,
+      "cells_total": 9
+    },
+    {
+      "id": "table-22-1",
+      "mode": "table",
+      "sha256": "60eee87c51348d211c28cd67e25aca21cc7ba375b82c9015e729cc6bde7220f2",
+      "expected": [
+        [
+          "编号",
+          "名称",
+          "金额"
+        ],
+        [
+          "00123",
+          "苹果",
+          "128.50"
+        ],
+        [
+          "00987",
+          "橙子",
+          "36.00"
+        ]
+      ],
+      "actual": [
+        [
+          "编号",
+          "名称",
+          "金额"
+        ],
+        [
+          "00123",
+          "苯果",
+          "128.50"
+        ],
+        [
+          "00987",
+          "橙子",
+          "36.00"
+        ]
+      ],
+      "exact": false,
+      "elapsed_ms": 571,
+      "shape_correct": true,
+      "cells_correct": 8,
+      "cells_total": 9
+    },
+    {
+      "id": "table-22-2",
+      "mode": "table",
+      "sha256": "543b1a0a34c9d6c018952d3959d7fb6648f68efdd63dea01ca76c83c28c48b4c",
+      "expected": [
+        [
+          "Item",
+          "Count",
+          "Note"
+        ],
+        [
+          "Alpha",
+          "10",
+          "OK"
+        ],
+        [
+          "Beta",
+          "",
+          "Pending"
+        ],
+        [
+          "Gamma",
+          "23",
+          "Done"
+        ]
+      ],
+      "actual": [
+        [
+          "Item",
+          "Count",
+          "Note"
+        ],
+        [
+          "Alpha",
+          "10",
+          "OK"
+        ],
+        [
+          "Beta",
+          "",
+          "Pending"
+        ],
+        [
+          "Gamma",
+          "23",
+          "Done"
+        ]
+      ],
+      "exact": true,
+      "elapsed_ms": 520,
+      "shape_correct": true,
+      "cells_correct": 12,
+      "cells_total": 12
+    },
+    {
+      "id": "text-28-0",
+      "mode": "ocr",
+      "sha256": "8e80c8dff004e8093c48328048055fa9f4fc760ca19d0a76e65fc41313b2dde3",
+      "expected": "拾光截图工具，所有识别均在本机完成。",
+      "actual": "拾光截图工具，\n所有识别均在本机完成。",
+      "exact": false,
+      "elapsed_ms": 2041,
+      "edit_distance": 1,
+      "characters": 18,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 18
+    },
+    {
+      "id": "text-28-1",
+      "mode": "ocr",
+      "sha256": "90c4a178359e80da8aa1f94090eb86582d27c9daa080d9c89eea4215ff565ab5",
+      "expected": "订单编号 00123456789，金额 128.50 元。",
+      "actual": "订单编号00123456789，\n金额128.50元。",
+      "exact": false,
+      "elapsed_ms": 2076,
+      "edit_distance": 4,
+      "characters": 29,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 26
+    },
+    {
+      "id": "text-28-2",
+      "mode": "ocr",
+      "sha256": "57a2dfc9ceec7a3087b5da675060812fe5616acaf15beb35dfb8e85bbd53775b",
+      "expected": "Open image, review the result, then copy.",
+      "actual": "Open image, review the result, then copy.",
+      "exact": true,
+      "elapsed_ms": 2069,
+      "edit_distance": 0,
+      "characters": 41,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 35
+    },
+    {
+      "id": "text-28-3",
+      "mode": "ocr",
+      "sha256": "bfa29bf3bf0d7820f0e6487d8b769a8a9689c4bda402a2718c26daca80823efb",
+      "expected": "Local OCR 2026: privacy and reliability.",
+      "actual": "Local OCR 2026: privacy and reliability.",
+      "exact": true,
+      "elapsed_ms": 1922,
+      "edit_distance": 0,
+      "characters": 40,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 35
+    },
+    {
+      "id": "text-28-4",
+      "mode": "ocr",
+      "sha256": "9ad50da168ee32e936dcbe722b8bab3e627eff1cac3c3375e22ac8063ee2fa52",
+      "expected": "截图之后可以标注、保存和复制。",
+      "actual": "截图之后可以标注、\n保存和复制。",
+      "exact": false,
+      "elapsed_ms": 1519,
+      "edit_distance": 1,
+      "characters": 15,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 15
+    },
+    {
+      "id": "text-28-5",
+      "mode": "ocr",
+      "sha256": "76a53b8894ad09b55c8b3f3909794e067b5c0d97ba5de37e0945c09fcbeb4a81",
+      "expected": "Test 00123 ABC abc 98765",
+      "actual": "Test 00123 ABC abc 98765",
+      "exact": true,
+      "elapsed_ms": 1118,
+      "edit_distance": 0,
+      "characters": 24,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 20
+    },
+    {
+      "id": "code-28-6",
+      "mode": "code",
+      "sha256": "ec283cb822c5225a996624a1bd42d0bb7a6b0ef9dcdc0006f968f64d4ac3a4fe",
+      "expected": "def total(items):\n    value = 0\n    for item in items:\n        value += item\n    return value",
+      "actual": "def total(items):\n    value=0\n    for item in items:\n       value +=iitem\n    returnvalue",
+      "exact": false,
+      "elapsed_ms": 436,
+      "edit_distance": 5,
+      "characters": 93,
+      "nonspace_edit_distance": 1,
+      "nonspace_characters": 60
+    },
+    {
+      "id": "code-28-7",
+      "mode": "code",
+      "sha256": "46faa69adbefb4ee4b26a290a6587a4fc88af3c6d0b60efe8fc5e96642d997d9",
+      "expected": "if ready:\n    print(\"hello\")\nelse:\n    print(\"waiting\")",
+      "actual": "if ready:\n    print(\"hello\")\nelse:\n    print(\"waiting\")",
+      "exact": true,
+      "elapsed_ms": 384,
+      "edit_distance": 0,
+      "characters": 55,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 43
+    },
+    {
+      "id": "code-28-8",
+      "mode": "code",
+      "sha256": "f2fe8291fc562a498db83bb1e9f78041dbb68289b19845d56ea5bee267e18693",
+      "expected": "data = [1, 2, 3]\nfor x in data:\n    print(x * 2)",
+      "actual": "data = [[1,2,3]\nfor x in (data:\n    print(x * 2)",
+      "exact": false,
+      "elapsed_ms": 431,
+      "edit_distance": 4,
+      "characters": 48,
+      "nonspace_edit_distance": 2,
+      "nonspace_characters": 33
+    },
+    {
+      "id": "code-28-9",
+      "mode": "code",
+      "sha256": "74299f9d6859a65108c2ff8fdf27127494e665bdc16a0093e11b02c92af9b386",
+      "expected": "ERROR 2026-09-20\n    path=/tmp/test.log\n    retry_count=3",
+      "actual": "ERROR 2026-09-20\n    path=/tmp/test.log\n    retry_count=3",
+      "exact": true,
+      "elapsed_ms": 509,
+      "edit_distance": 0,
+      "characters": 57,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 46
+    },
+    {
+      "id": "table-28-0",
+      "mode": "table",
+      "sha256": "7807f42fe72261046fc5e7c76e1beddb2491b138f6dccc317a36e2fec5db9277",
+      "expected": [
+        [
+          "ID",
+          "Name",
+          "Value"
+        ],
+        [
+          "00123",
+          "Alice",
+          "128.50"
+        ],
+        [
+          "00987",
+          "Bob",
+          ""
+        ]
+      ],
+      "actual": [
+        [
+          "ID",
+          "Name",
+          "Value"
+        ],
+        [
+          "00123",
+          "Alice",
+          "128.50"
+        ],
+        [
+          "00987",
+          "Bob",
+          ""
+        ]
+      ],
+      "exact": true,
+      "elapsed_ms": 590,
+      "shape_correct": true,
+      "cells_correct": 9,
+      "cells_total": 9
+    },
+    {
+      "id": "table-28-1",
+      "mode": "table",
+      "sha256": "3b7ea4ed016b41aa2e44f2d8d794fd370fbfc1e256e6f7a906d92766629c53f5",
+      "expected": [
+        [
+          "编号",
+          "名称",
+          "金额"
+        ],
+        [
+          "00123",
+          "苹果",
+          "128.50"
+        ],
+        [
+          "00987",
+          "橙子",
+          "36.00"
+        ]
+      ],
+      "actual": [
+        [
+          "编号",
+          "名称",
+          "金额"
+        ],
+        [
+          "00123",
+          "苯果",
+          "128.50"
+        ],
+        [
+          "00987",
+          "橙子",
+          "36.00"
+        ]
+      ],
+      "exact": false,
+      "elapsed_ms": 578,
+      "shape_correct": true,
+      "cells_correct": 8,
+      "cells_total": 9
+    },
+    {
+      "id": "table-28-2",
+      "mode": "table",
+      "sha256": "0678d53abc37ad5c689c47f1a0e7b1bd07c73ad126514f235764992affddfbc0",
+      "expected": [
+        [
+          "Item",
+          "Count",
+          "Note"
+        ],
+        [
+          "Alpha",
+          "10",
+          "OK"
+        ],
+        [
+          "Beta",
+          "",
+          "Pending"
+        ],
+        [
+          "Gamma",
+          "23",
+          "Done"
+        ]
+      ],
+      "actual": [
+        [
+          "Item",
+          "Count",
+          "Note"
+        ],
+        [
+          "Alpha",
+          "10",
+          "OK"
+        ],
+        [
+          "Beta",
+          "",
+          "Pending"
+        ],
+        [
+          "Gamma",
+          "23",
+          "Done"
+        ]
+      ],
+      "exact": true,
+      "elapsed_ms": 502,
+      "shape_correct": true,
+      "cells_correct": 12,
+      "cells_total": 12
+    },
+    {
+      "id": "text-36-0",
+      "mode": "ocr",
+      "sha256": "6dc469b409c796c4158a079c01a6b81b3e8bdefd39f983aab08ac13777ed0290",
+      "expected": "拾光截图工具，所有识别均在本机完成。",
+      "actual": "拾光截图工具，\n所有识别均在本机完成。",
+      "exact": false,
+      "elapsed_ms": 2342,
+      "edit_distance": 1,
+      "characters": 18,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 18
+    },
+    {
+      "id": "text-36-1",
+      "mode": "ocr",
+      "sha256": "a2aca10ca419f4c43625be2430d57fb48ea58a9f95b34aca804ad9862bd6a6a0",
+      "expected": "订单编号 00123456789，金额 128.50 元。",
+      "actual": "订单编号00123456789，\n金额128.50元。",
+      "exact": false,
+      "elapsed_ms": 2519,
+      "edit_distance": 4,
+      "characters": 29,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 26
+    },
+    {
+      "id": "text-36-2",
+      "mode": "ocr",
+      "sha256": "67119c402f764f1e8a57f88b234ef4d03b949819489febd09f1f4dc408da9d8f",
+      "expected": "Open image, review the result, then copy.",
+      "actual": "Open image, review the result, then copy.",
+      "exact": true,
+      "elapsed_ms": 1010,
+      "edit_distance": 0,
+      "characters": 41,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 35
+    },
+    {
+      "id": "text-36-3",
+      "mode": "ocr",
+      "sha256": "e2640ce2fa937f5563194a1272ef667d80c2b3eaa2596a2e114a19f0fbc33b8c",
+      "expected": "Local OCR 2026: privacy and reliability.",
+      "actual": "Local OCR 2026: privacy and reliability.",
+      "exact": true,
+      "elapsed_ms": 2998,
+      "edit_distance": 0,
+      "characters": 40,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 35
+    },
+    {
+      "id": "text-36-4",
+      "mode": "ocr",
+      "sha256": "43ccc849df6cb87ee66a0cbca93976d207003eb0d6f5e924df4abbe29f115c33",
+      "expected": "截图之后可以标注、保存和复制。",
+      "actual": "截图之后可以标注、\n保存和复制。",
+      "exact": false,
+      "elapsed_ms": 2101,
+      "edit_distance": 1,
+      "characters": 15,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 15
+    },
+    {
+      "id": "text-36-5",
+      "mode": "ocr",
+      "sha256": "e72b175db2d6fb2a8ddd1957a3b49a6e0a15dd3eb7ccae39b625f84efb6d48f4",
+      "expected": "Test 00123 ABC abc 98765",
+      "actual": "Test 00123 ABC abc 98765",
+      "exact": true,
+      "elapsed_ms": 1315,
+      "edit_distance": 0,
+      "characters": 24,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 20
+    },
+    {
+      "id": "code-36-6",
+      "mode": "code",
+      "sha256": "cb1b44dc6810c8b25c3be3c73b8be2c0690f6393d8d530e376ac55397f1f3d3e",
+      "expected": "def total(items):\n    value = 0\n    for item in items:\n        value += item\n    return value",
+      "actual": "def total(items):\n    value= 0\n    for item in items:\n        value += item\n    return value",
+      "exact": false,
+      "elapsed_ms": 471,
+      "edit_distance": 1,
+      "characters": 93,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 60
+    },
+    {
+      "id": "code-36-7",
+      "mode": "code",
+      "sha256": "2a339c78002c7e77842235ea89ab51b2d806b98d571627a5990e278978485be2",
+      "expected": "if ready:\n    print(\"hello\")\nelse:\n    print(\"waiting\")",
+      "actual": "if ready:\n    print(\"hello\")\nelse:\n    print(\"waiting\")",
+      "exact": true,
+      "elapsed_ms": 500,
+      "edit_distance": 0,
+      "characters": 55,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 43
+    },
+    {
+      "id": "code-36-8",
+      "mode": "code",
+      "sha256": "005209710955f9997fefc5abf678a7d0bab67955611bc86574a25257bdf65eb8",
+      "expected": "data = [1, 2, 3]\nfor x in data:\n    print(x * 2)",
+      "actual": "data=  [1，2,33]\nfor X in data:\n    print(x * 2)",
+      "exact": false,
+      "elapsed_ms": 548,
+      "edit_distance": 6,
+      "characters": 48,
+      "nonspace_edit_distance": 3,
+      "nonspace_characters": 33
+    },
+    {
+      "id": "code-36-9",
+      "mode": "code",
+      "sha256": "d6f8be81df4a0e7c0f9aab73cf83e2b0e091f746aad7d695c0200752c05d94de",
+      "expected": "ERROR 2026-09-20\n    path=/tmp/test.log\n    retry_count=3",
+      "actual": "ERROR 2026-09-20\n    path=/tmp/test.log\n    retry_count=3",
+      "exact": true,
+      "elapsed_ms": 616,
+      "edit_distance": 0,
+      "characters": 57,
+      "nonspace_edit_distance": 0,
+      "nonspace_characters": 46
+    },
+    {
+      "id": "table-36-0",
+      "mode": "table",
+      "sha256": "6b183fc5a4eb99dfb016cd9770ad5be063fb0c80abfd73988fa668fa5f7c730d",
+      "expected": [
+        [
+          "ID",
+          "Name",
+          "Value"
+        ],
+        [
+          "00123",
+          "Alice",
+          "128.50"
+        ],
+        [
+          "00987",
+          "Bob",
+          ""
+        ]
+      ],
+      "actual": [
+        [
+          "ID",
+          "Name",
+          "Value"
+        ],
+        [
+          "00123",
+          "Alice",
+          "128.50"
+        ],
+        [
+          "00987",
+          "Bob",
+          ""
+        ]
+      ],
+      "exact": true,
+      "elapsed_ms": 605,
+      "shape_correct": true,
+      "cells_correct": 9,
+      "cells_total": 9
+    },
+    {
+      "id": "table-36-1",
+      "mode": "table",
+      "sha256": "14203b1bbeea17c7392677ebd79ee5f35df927be789582fc14c7be8bb44f2d97",
+      "expected": [
+        [
+          "编号",
+          "名称",
+          "金额"
+        ],
+        [
+          "00123",
+          "苹果",
+          "128.50"
+        ],
+        [
+          "00987",
+          "橙子",
+          "36.00"
+        ]
+      ],
+      "actual": [
+        [
+          "编号",
+          "名称",
+          "金额"
+        ],
+        [
+          "00123",
+          "苯果",
+          "128.50"
+        ],
+        [
+          "00987",
+          "橙子",
+          "36.00"
+        ]
+      ],
+      "exact": false,
+      "elapsed_ms": 609,
+      "shape_correct": true,
+      "cells_correct": 8,
+      "cells_total": 9
+    },
+    {
+      "id": "table-36-2",
+      "mode": "table",
+      "sha256": "86e5778001c04c7115518f5172c4c86f07d263ff36d6ac96868981a44d1ac9c6",
+      "expected": [
+        [
+          "Item",
+          "Count",
+          "Note"
+        ],
+        [
+          "Alpha",
+          "10",
+          "OK"
+        ],
+        [
+          "Beta",
+          "",
+          "Pending"
+        ],
+        [
+          "Gamma",
+          "23",
+          "Done"
+        ]
+      ],
+      "actual": [
+        [
+          "Item",
+          "Count",
+          "Note"
+        ],
+        [
+          "Alpha",
+          "10",
+          "OK"
+        ],
+        [
+          "Beta",
+          "",
+          "Pending"
+        ],
+        [
+          "Gamma",
+          "23",
+          "Done"
+        ]
+      ],
+      "exact": true,
+      "elapsed_ms": 515,
+      "shape_correct": true,
+      "cells_correct": 12,
+      "cells_total": 12
+    }
+  ]
+}

@@ -157,7 +157,13 @@ def main() -> int:
     print("AppController.翻译 全链路 OK")
 
     # ---- 5. 工具栏接线 ----
-    sel = RegionSelector()
+    from shiguang_capture.capture.grabber import ScreenFrame
+    from shiguang_capture.geometry import Rect
+    from PySide6.QtGui import QGuiApplication
+    g = QGuiApplication.primaryScreen().geometry()
+    snapshot = QImage(g.width(), g.height(), QImage.Format.Format_RGB888)
+    snapshot.fill(QColor("white"))
+    sel = RegionSelector(frames=[ScreenFrame(Rect(g.x(), g.y(), g.width(), g.height()), snapshot, 1)])
     got: list[tuple] = []
     sel.action_chosen.connect(lambda rect, action: got.append((rect, action)))
     from shiguang_capture.geometry import Rect

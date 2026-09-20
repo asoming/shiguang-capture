@@ -59,8 +59,8 @@ def fetch_latest_release(repo: str = GITHUB_REPO, timeout: float = 8.0) -> Updat
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return parse_release_payload(json.loads(resp.read().decode("utf-8")))
-    except Exception:
-        return None
+    except Exception as exc:
+        raise ConnectionError("无法检查更新，请稍后重试。") from exc
 
 
 def check_for_update(current_version: str, repo: str = GITHUB_REPO) -> UpdateInfo | None:
@@ -70,5 +70,5 @@ def check_for_update(current_version: str, repo: str = GITHUB_REPO) -> UpdateInf
         return None
     try:
         return latest if is_newer(latest.version, current_version) else None
-    except ValueError:
-        return None
+    except ValueError as exc:
+        raise ValueError("发布版本信息无效，请从发布页查看。") from exc

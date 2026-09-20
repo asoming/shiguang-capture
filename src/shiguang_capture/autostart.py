@@ -13,6 +13,8 @@ _VALUE_NAME = "ShiguangCapture"
 
 def _launcher_command() -> str:
     """指向当前解释器 + 模块的启动命令（开发态）；打包后替换为 exe 路径。"""
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
     return f'"{sys.executable}" -m shiguang_capture'
 
 

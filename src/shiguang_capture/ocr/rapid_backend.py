@@ -17,9 +17,13 @@ class RapidOCRBackend:
     is_local = True
 
     def __init__(self) -> None:
+        from .models import verify_models
+        verify_models()
+        import onnxruntime
+        onnxruntime.disable_telemetry_events()
         from rapidocr_onnxruntime import RapidOCR
 
-        self._engine = RapidOCR()
+        self._engine = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=1)
         log.info("RapidOCR 引擎已加载（本地推理）")
 
     def recognize(self, image: bytes) -> OCRResult:

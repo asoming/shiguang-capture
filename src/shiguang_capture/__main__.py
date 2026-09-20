@@ -11,10 +11,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="shiguang-capture", description=f"{__app_name__} — 屏幕信息捕获与再利用工具")
     p.add_argument("--version", action="store_true", help="显示版本号并退出")
     p.add_argument("--check", action="store_true", help="仅做环境自检（不启动 GUI）")
+    p.add_argument("--self-test", action="store_true", help="运行安装包离屏自测（使用合成图片）")
+    p.add_argument("--desktop-test", action="store_true", help="使用合成窗口实测当前 X11 桌面")
     return p
 
 
 def main() -> int:
+    import multiprocessing
+    multiprocessing.freeze_support()
     from ._console import fix_console_encoding
 
     fix_console_encoding()   # Windows 控制台默认非 UTF-8，中文输出会炸
@@ -22,6 +26,13 @@ def main() -> int:
     if args.version:
         print(f"{__app_name__} v{__version__}")
         return 0
+    if args.desktop_test:
+        from .desktoptest import main as desktop_test
+        desktop_test()
+        return 0
+    if args.self_test:
+        from .selftest import run
+        return run()
     if args.check:
         from .config import AppConfig
         from .geometry import Rect

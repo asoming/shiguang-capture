@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QGuiApplication, QKeyEvent, QMouseEvent, QPain
 from PySide6.QtWidgets import QWidget
 
 from ..colors import format_color
+from ..capture.grabber import capture_frames
 from ..geometry import Rect, union
 
 
@@ -19,6 +20,7 @@ class ColorPickerOverlay(QWidget):
     def __init__(self, fmt: str = "hex") -> None:
         super().__init__()
         self._fmt = fmt
+        self._frames = capture_frames()
         rects = []
         for s in QGuiApplication.screens():
             g = s.geometry()
@@ -42,10 +44,14 @@ class ColorPickerOverlay(QWidget):
 
     def mousePressEvent(self, e: QMouseEvent) -> None:
         if e.button() == Qt.MouseButton.LeftButton and self._pos is not None:
-            screen = QGuiApplication.screenAt(self._pos) or QGuiApplication.primaryScreen()
-            g = screen.geometry()
-            img = screen.grabWindow(0, self._pos.x() - g.x(), self._pos.y() - g.y(), 1, 1).toImage()
-            c: QColor = img.pixelColor(0, 0)
+            frame = next((f for f in self._frames if
+                          f.bounds.x <= self._pos.x() < f.bounds.right and
+                          f.bounds.y <= self._pos.y() < f.bounds.bottom), None)
+            if frame is None:
+                return
+            x = min(frame.image.width()-1, int((self._pos.x()-frame.bounds.x)*frame.dpr))
+            y = min(frame.image.height()-1, int((self._pos.y()-frame.bounds.y)*frame.dpr))
+            c = frame.image.pixelColor(x, y)
             value = format_color(c.red(), c.green(), c.blue(), self._fmt)
             self.hide()
             self.color_picked.emit(value)
@@ -59,7 +65,7 @@ class ColorPickerOverlay(QWidget):
         if self._pos is None:
             return
         p = QPainter(self)
-        origin = self.rect().topLeft()
+        origin = self.geometry().topLeft()
         x, y = self._pos.x() - origin.x(), self._pos.y() - origin.y()
         p.setPen(QPen(QColor(125, 155, 255), 1))
         p.drawLine(0, y, self.width(), y)

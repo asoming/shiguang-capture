@@ -9,6 +9,8 @@ from .icon import make_icon
 
 
 class TrayIcon(QObject):
+    action_open = Signal()
+    action_workspace = Signal()
     action_capture = Signal()
     action_scroll = Signal()
     action_pick = Signal()
@@ -23,6 +25,9 @@ class TrayIcon(QObject):
         self._tray = QSystemTrayIcon(make_icon(), self.parent())
         self._tray.setToolTip("拾光 Capture — F1 截图 / F2 取色 / F3 贴图")
         menu = QMenu()
+        menu.addAction("打开图片工作台", self.action_workspace.emit)
+        menu.addAction("打开图片…", self.action_open.emit)
+        menu.addSeparator()
         menu.addAction("✂️ 区域截图 (F1)", self.action_capture.emit)
         menu.addAction("📜 滚动长截图 (Ctrl+F1)", self.action_scroll.emit)
         menu.addAction("🎨 取色器 (F2)", self.action_pick.emit)
@@ -39,7 +44,7 @@ class TrayIcon(QObject):
     def _on_activated(self, reason) -> None:
         # 双击托盘图标打开设置（单击留给截图）
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            self.action_settings.emit()
+            self.action_workspace.emit()
 
     def show(self) -> None:
         self._tray.show()

@@ -50,10 +50,10 @@ class TestResolveDirection:
         cfg = AppConfig(target_lang="en")
         assert resolve_direction("你好世界", cfg) == ("zh", "en")
 
-    def test_forced_target_same_as_source_flips(self):
-        """源语言与目标语言相同时自动翻转，避免恒等翻译。"""
+    def test_forced_target_same_as_source_preserved(self):
+        """同语种保留原文，不伪造源语言。"""
         cfg = AppConfig(target_lang="en")
-        assert resolve_direction("hello world", cfg) == ("zh", "en")
+        assert resolve_direction("hello world", cfg) == ("en", "en")
 
 
 class TestLocalDictBackend:

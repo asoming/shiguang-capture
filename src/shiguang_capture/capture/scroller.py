@@ -28,7 +28,7 @@ def qimage_to_array(img: QImage) -> np.ndarray:
     w, h = converted.width(), converted.height()
     ptr = converted.bits()
     arr = np.frombuffer(ptr, dtype=np.uint8, count=converted.sizeInBytes())
-    return arr.reshape(h, w, 3).copy()
+    return arr.reshape(h, converted.bytesPerLine())[:, :w * 3].reshape(h, w, 3).copy()
 
 
 def array_to_qimage(arr: np.ndarray) -> QImage:
@@ -40,6 +40,8 @@ def array_to_qimage(arr: np.ndarray) -> QImage:
 class ScrollCaptureSession(QObject):
     """一次滚动长截图。用法：构造 → start() → 监听 finished/aborted。"""
 
+    frame_capturing = Signal()
+    frame_captured = Signal()
     progressed = Signal(int, int)     # 已拼接总高度, 帧数
     preview_ready = Signal(object)    # 阶段性拼接图（QImage，每 3 帧一次）
     finished = Signal(object)         # QImage 长图
@@ -58,9 +60,14 @@ class ScrollCaptureSession(QObject):
         self._frames = 0
         self._still_count = 0
         self._running = False
+        self._mouse = None
+        self._original_mouse = None
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._capture_step)
+        self._frame_timer = QTimer(self)
+        self._frame_timer.setSingleShot(True)
+        self._frame_timer.timeout.connect(self._capture_frame)
 
     # ---------- 生命周期 ----------
     def start(self) -> None:
@@ -82,6 +89,8 @@ class ScrollCaptureSession(QObject):
             return
         self._running = False
         self._timer.stop()
+        self._frame_timer.stop()
+        self._restore_mouse()
         if self._acc is not None and self._frames > 0:
             self.finished.emit(array_to_qimage(self._acc))
         else:
@@ -98,33 +107,59 @@ class ScrollCaptureSession(QObject):
         try:
             from pynput.mouse import Controller
 
-            mouse = Controller()
+            if self._mouse is None:
+                self._mouse = Controller()
+                self._original_mouse = self._mouse.position
+            mouse = self._mouse
             mouse.position = (self._rect.x + self._rect.width // 2,
                               self._rect.y + self._rect.height // 2)
             mouse.scroll(0, -self._scroll_clicks)
         except Exception as exc:
-            self._running = False
-            self.failed.emit(f"滚轮模拟失败：{exc}")
+            self.failed.emit("无法控制滚动；已保留当前图像。请检查系统权限。")
+            self.abort()
             return
         # 等内容滚动并稳定后再抓帧
         self._timer.start(self._settle_ms)
 
     def _capture_step(self) -> None:
+        if self._running:
+            self.frame_capturing.emit()
+            self._frame_timer.start(80)
+
+    def _capture_frame(self) -> None:
         if not self._running or self._acc is None:
             return
-        frame = qimage_to_array(grab_region(self._rect))
+        try:
+            frame = qimage_to_array(grab_region(self._rect))
+        except Exception:
+            self.failed.emit("捕获中断，已保留此前内容。请检查屏幕是否发生变化。")
+            self.abort()
+            return
 
+        self.frame_captured.emit()
+        if frame.shape != self._prev_frame.shape:
+            self.failed.emit("屏幕尺寸已变化，已停止并保留此前内容。")
+            self.abort()
+            return
         if frames_identical(frame, self._prev_frame):
             self._still_count += 1
             if self._still_count >= 2:
                 self._finish()
                 return
+            self._scroll_once()
+            return
         else:
             self._still_count = 0
 
         overlap, sad = find_overlap(self._acc[-min(600, self._acc.shape[0]):], frame)
-        if overlap == 0 and frames_identical(frame, self._prev_frame):
-            self._finish()
+        if overlap == 0 or sad > 2.0:
+            self.failed.emit("画面无法可靠拼接，已停止并保留此前内容。")
+            self.abort()
+            return
+        new_height = self._acc.shape[0] + frame.shape[0] - overlap
+        if new_height > 32767 or new_height * frame.shape[1] > 64_000_000:
+            self.failed.emit("已达到长图尺寸上限。请保存当前部分，再继续截取。")
+            self.abort()
             return
         if overlap >= frame.shape[0]:
             # 整帧都被覆盖（滚动距离过小），多滚一点再试，不计入帧数
@@ -148,5 +183,15 @@ class ScrollCaptureSession(QObject):
     def _finish(self) -> None:
         self._running = False
         self._timer.stop()
+        self._frame_timer.stop()
+        self._restore_mouse()
         assert self._acc is not None
         self.finished.emit(array_to_qimage(self._acc))
+
+    def _restore_mouse(self):
+        if self._mouse is not None and self._original_mouse is not None:
+            try:
+                self._mouse.position = self._original_mouse
+            except Exception:
+                pass  # Input permission may have been revoked mid-capture.
+            self._original_mouse = None

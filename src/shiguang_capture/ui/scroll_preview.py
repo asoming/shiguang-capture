@@ -44,6 +44,10 @@ class ScrollPreviewWindow(QWidget):
         row.addWidget(self.save_btn)
         lay.addLayout(row)
 
+    def closeEvent(self, event) -> None:
+        self.abort_requested.emit()
+        super().closeEvent(event)
+
     def update_progress(self, height: int, frames: int, image: QImage | None = None) -> None:
         self.status.setText(f"已拼接 {height:,} px · 第 {frames} 帧（滚动中…）")
         if image is not None and not image.isNull():

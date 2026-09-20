@@ -30,6 +30,13 @@ class TestConflicts:
 
 
 class TestPersistence:
+    def test_json_cannot_replace_hotkey_methods(self, tmp_path):
+        path = tmp_path / "cfg.json"
+        path.write_text('{"hotkeys":{"conflicts":"bad","capture_region":null}}')
+        cfg = AppConfig.load(path)
+        assert cfg.hotkeys.conflicts() == []
+        assert cfg.hotkeys.capture_region == "f1"
+
     def test_roundtrip(self, tmp_path):
         p = tmp_path / "cfg.json"
         cfg = AppConfig(image_format="jpg", pin_default_opacity=0.8)

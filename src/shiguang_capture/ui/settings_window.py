@@ -4,6 +4,8 @@
 保存后通过 settings_saved 信号把新配置交回 AppController 统一应用。
 """
 from __future__ import annotations
+from copy import deepcopy
+from .theme import STYLE
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -33,13 +35,20 @@ class SettingsWindow(QDialog):
 
     def __init__(self, config: AppConfig, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._config = config
+        self._config = deepcopy(config)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.setStyleSheet(STYLE)
         self.setWindowTitle(f"{__app_name__} · 设置")
         self.setWindowIcon(make_icon())
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(680)
+        self.resize(740, 560)
         self.setModal(False)
 
         root = QVBoxLayout(self)
+        root.setContentsMargins(24, 24, 24, 20)
+        root.setSpacing(18)
+        root.addWidget(QLabel("拾光  /  偏好设置", objectName="brand"))
+        root.addWidget(QLabel("让工具适应你的习惯。", objectName="title"))
         tabs = QTabWidget()
         tabs.addTab(self._build_general(), "常规")
         tabs.addTab(self._build_hotkeys(), "热键")
@@ -48,11 +57,14 @@ class SettingsWindow(QDialog):
         tabs.addTab(self._build_about(), "关于与更新")
         root.addWidget(tabs)
 
+        self.status = QLabel("设置仅在保存成功后生效。", objectName="muted")
+        self.status.setWordWrap(True)
+        root.addWidget(self.status)
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         cancel = QPushButton("取消")
         cancel.clicked.connect(self.close)
-        save = QPushButton("保存")
+        save = QPushButton("保存", objectName="primary")
         save.setDefault(True)
         save.clicked.connect(self._on_save)
         buttons.addWidget(cancel)
@@ -79,11 +91,12 @@ class SettingsWindow(QDialog):
 
         self.clipboard_check = QCheckBox("截图后自动复制到剪贴板")
         self.clipboard_check.setChecked(self._config.copy_to_clipboard)
-        form.addRow(self.clipboard_check)
+        self.clipboard_check.hide()
+        form.addRow(QLabel("截图默认只复制；只有点击保存才会写入文件。", objectName="muted"))
 
         self.sound_check = QCheckBox("截图时播放快门声")
         self.sound_check.setChecked(self._config.play_shutter_sound)
-        form.addRow(self.sound_check)
+        self.sound_check.hide()
 
         self.autostart_check = QCheckBox("开机自动启动")
         self.autostart_check.setChecked(self._config.launch_at_login)
@@ -142,7 +155,7 @@ class SettingsWindow(QDialog):
         form = QFormLayout(w)
         self.ocr_combo = QComboBox()
         self.ocr_combo.addItem("本地引擎（默认 · 永久免费 · 图像不出本机）", "local")
-        self.ocr_combo.addItem("云端增强（暂未开放 · 需显式开启）", "cloud")
+        self.ocr_combo.setEnabled(False)
         idx = self.ocr_combo.findData(self._config.ocr_engine)
         self.ocr_combo.setCurrentIndex(max(idx, 0))
         form.addRow("识别引擎", self.ocr_combo)
@@ -158,7 +171,7 @@ class SettingsWindow(QDialog):
         self.cloud_translate_check = QCheckBox("允许云端翻译（默认关闭 · 文本将离开本机）")
         self.cloud_translate_check.setChecked(
             getattr(self._config, "allow_cloud_translate", False))
-        form.addRow(self.cloud_translate_check)
+        self.cloud_translate_check.hide()
 
         # 离线翻译模型状态
         self.translate_status = QLabel("")
@@ -172,7 +185,7 @@ class SettingsWindow(QDialog):
 
         note = QLabel(
             "隐私红线：选择本地引擎时，识别与翻译全程在本机完成，不上传任何图像或文本。\n"
-            "离线神经翻译（Argos）需一次性下载中英模型（约 100MB）；未安装时自动降级为术语词典。"
+            "翻译为实验能力。未单独安装 Argos 和语言模型时，只提供术语替换；本界面不会自动下载模型。"
         )
         note.setWordWrap(True)
         note.setStyleSheet("color:#888")
@@ -225,7 +238,7 @@ class SettingsWindow(QDialog):
 
     # ================= 保存 =================
     def _on_save(self) -> None:
-        cfg = self._config
+        cfg = deepcopy(self._config)
         cfg.save_dir = self.save_dir_edit.text().strip() or cfg.save_dir
         cfg.image_format = self.format_combo.currentText()
         cfg.copy_to_clipboard = self.clipboard_check.isChecked()
@@ -235,18 +248,18 @@ class SettingsWindow(QDialog):
         cfg.picker_format = self.picker_combo.currentText()
         cfg.ocr_engine = self.ocr_combo.currentData()
         cfg.target_lang = self.lang_combo.currentData()
-        cfg.allow_cloud_translate = self.cloud_translate_check.isChecked()
+        cfg.allow_cloud_translate = False
         for attr, edit in self._hotkey_edits.items():
             setattr(cfg.hotkeys, attr, edit.text().strip().lower() or getattr(cfg.hotkeys, attr))
 
         conflicts = cfg.hotkeys.conflicts()
         if conflicts:
             names = "、".join(f"{a} ↔ {b}" for a, b in conflicts)
-            self.hotkey_warn.setText(f"⚠️ 热键冲突：{names}。请修改后重新保存。")
+            self.hotkey_warn.setText(f"热键冲突：{names}。请修改后重新保存。")
+            self.status.setText("设置未保存，原快捷键仍可使用。")
             self._switch_to_tab(1)
             return
         self.settings_saved.emit(cfg)
-        self.close()
 
     def _switch_to_tab(self, index: int) -> None:
         tabs = self.findChild(QTabWidget)

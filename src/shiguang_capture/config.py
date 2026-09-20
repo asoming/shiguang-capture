@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -26,7 +27,7 @@ class HotkeyConfig:
         seen: dict[str, str] = {}
         out: list[tuple[str, str]] = []
         for action, key in asdict(self).items():
-            norm = key.strip().lower()
+            norm = "+".join(sorted(part.strip() for part in key.lower().split("+") if part.strip()))
             if norm in seen:
                 out.append((seen[norm], action))
             else:
@@ -69,16 +70,33 @@ class AppConfig:
             return cls()
         cfg = cls()
         hk = raw.pop("hotkeys", {}) if isinstance(raw, dict) else {}
-        for k, v in hk.items():
-            if hasattr(cfg.hotkeys, k):
-                setattr(cfg.hotkeys, k, str(v))
+        for k, v in (hk.items() if isinstance(hk, dict) else []):
+            if k in HotkeyConfig.__dataclass_fields__ and isinstance(v, str):
+                setattr(cfg.hotkeys, k, v)
         for k, v in (raw.items() if isinstance(raw, dict) else []):
-            if hasattr(cfg, k):
-                setattr(cfg, k, v)
+            if k not in {"hotkeys"} and k in cls.__dataclass_fields__:
+                default = getattr(cfg, k)
+                if type(v) is type(default) or (isinstance(default, float) and type(v) is int):
+                    setattr(cfg, k, v)
+        cfg.pin_default_opacity = max(0.1, min(1.0, cfg.pin_default_opacity))
+        if cfg.ocr_engine != "local":
+            cfg.ocr_engine = "local"
+        cfg.allow_cloud_translate = False
         return cfg
 
     def save(self, path: Path | None = None) -> Path:
         p = path or self.default_path()
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(asdict(self), ensure_ascii=False, indent=2), encoding="utf-8")
+        name = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=p.parent,
+                                             prefix=".config-", delete=False) as temp:
+                name = Path(temp.name)
+                json.dump(asdict(self), temp, ensure_ascii=False, indent=2)
+                temp.flush()
+                os.fsync(temp.fileno())
+            name.replace(p)
+        finally:
+            if name is not None:
+                name.unlink(missing_ok=True)
         return p

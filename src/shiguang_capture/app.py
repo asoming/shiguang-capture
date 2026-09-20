@@ -1,481 +1,566 @@
-"""app.py — 应用装配：托盘 + 热键 + 捕获 + 贴图 + 取色 + 设置 + 更新。
-
-设计约束（PRD）：
-- 截图链路保持轻量，录屏模块不进入本进程（V2.0 独立入口）。
-- 本地识别为默认；云端后端必须显式许可（ocr.assert_privacy_guard）。
-"""
+"""Desktop orchestration. Explicit outputs, frozen captures, cancellable recognition."""
 from __future__ import annotations
-
 import logging
+import multiprocessing
 import sys
 import threading
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, Signal, Slot, Qt, QBuffer, QIODevice
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
-from . import __version__
-from . import autostart
-from .capture.grabber import grab_region
+from . import __version__, autostart
+from .capture.grabber import grab_fullscreen, grab_region
 from .capture.scroller import ScrollCaptureSession
 from .capture.selector import RegionSelector
 from .config import AppConfig
-from .geometry import Rect
 from .hotkeys import HotkeyManager
+from .images import load_image, save_image, validate_size
 from .naming import next_seq, shot_name
-from .ocr import OCRBackend, assert_privacy_guard, create_backend
-from .ui.picker import ColorPickerOverlay
+from .ocr import assert_privacy_guard, create_backend
+from .ocr.worker import RecognitionCancelled, RecognitionRunner
 from .ui.pin_window import PinWindow
+from .ui.result_panel import ResultPanel
 from .ui.scroll_preview import ScrollPreviewWindow
 from .ui.settings_window import SettingsWindow
 from .ui.tray import TrayIcon
-from .updater import RELEASES_PAGE, UpdateInfo, check_for_update
+from .updater import check_for_update
 
 log = logging.getLogger(__name__)
 
 
 class _UpdateBridge(QObject):
-    """工作线程 → Qt 主线程的结果桥。"""
-
-    finished = Signal(object)  # UpdateInfo | None
+    finished = Signal(object)
 
 
 class _RecognitionBridge(QObject):
-    """识别工作线程 → Qt 主线程的结果桥。
-
-    必须由 AppController 持强引用直到工作线程结束：Qt 的 QObject 一旦被
-    Python GC 回收，底层 C++ 对象即销毁，线程再 emit 就是野指针访问。
-    """
-
-    ok = Signal(object)   # OCRResult
+    ok = Signal(object)
     err = Signal(str)
-    done = Signal()       # 线程收尾（无论成败）
+    done = Signal()
+
+    def __init__(self, on_ok=None, on_err=None, cleanup=None):
+        super().__init__()
+        self._on_ok, self._on_err, self._cleanup = on_ok, on_err, cleanup
+        self.cancel = threading.Event()
+        self.ok.connect(self.deliver_ok)
+        self.err.connect(self.deliver_error)
+        self.done.connect(self.finish)
+
+    @Slot(object)
+    def deliver_ok(self, result):
+        if not self.cancel.is_set() and self._on_ok:
+            self._on_ok(result)
+
+    @Slot(str)
+    def deliver_error(self, message):
+        if not self.cancel.is_set() and self._on_err:
+            self._on_err(message)
+
+    @Slot()
+    def finish(self):
+        if self._cleanup:
+            self._cleanup(self)
+        self._on_ok = self._on_err = self._cleanup = None
 
 
 class AppController:
-    def __init__(self, qt_app: QApplication, config: AppConfig | None = None,
-                 ocr_backend: OCRBackend | None = None) -> None:
+    def __init__(self, qt_app, config=None, ocr_backend=None):
         self.app = qt_app
         self.config = config or AppConfig.load()
-        self._ocr_override = ocr_backend          # 测试注入；None 则惰性工厂创建
-        self._ocr: OCRBackend | None = None       # 首次使用时加载（引擎初始化重）
-        self._pins: list[PinWindow] = []
-        self._pins_hidden = False
-        self._selector: RegionSelector | None = None
-        self._picker: ColorPickerOverlay | None = None
-        self._settings: SettingsWindow | None = None
-        self._scroll_session: ScrollCaptureSession | None = None
-        self._scroll_preview: ScrollPreviewWindow | None = None
-        self._recognition_bridges: list[_RecognitionBridge] = []
+        self._ocr_override = ocr_backend
+        self._ocr = None
+        self._runner = RecognitionRunner()
+        self._recognition_bridges = []
+        self._active_task = None
+        self._task_id = 0
+        self._panel = None
         self._last_image = None
-
+        self._selector = self._picker = self._settings = None
+        self._scroll_session = self._scroll_preview = None
+        self._pins = []
+        self._pins_hidden = False
+        self._closing = False
+        self._update_running = False
         self.tray = TrayIcon()
-        self.tray.action_capture.connect(self.start_region_capture)
-        self.tray.action_scroll.connect(self.start_scroll_capture)
-        self.tray.action_pick.connect(self.start_color_pick)
-        self.tray.action_ocr.connect(self.ocr_recognize)
-        self.tray.action_hide_pins.connect(self.toggle_pins)
-        self.tray.action_settings.connect(self.open_settings)
+        for signal, callback in [
+            (self.tray.action_capture, self.start_region_capture),
+            (self.tray.action_scroll, self.start_scroll_capture),
+            (self.tray.action_pick, self.start_color_pick),
+            (self.tray.action_ocr, self.ocr_recognize),
+            (self.tray.action_hide_pins, self.toggle_pins),
+            (self.tray.action_settings, self.open_settings),
+            (self.tray.action_open, self.open_image),
+            (self.tray.action_workspace, self.open_workspace),
+            (self.tray.action_quit, self.shutdown),
+        ]:
+            signal.connect(callback)
         self.tray.action_check_update.connect(lambda: self.check_updates(manual=True))
-        self.tray.action_quit.connect(self.shutdown)
         self.tray.show()
-
         self.hotkeys = HotkeyManager()
         self.hotkeys.bridge.triggered.connect(self._on_hotkey)
         self._register_hotkeys()
-
         self._update_bridge = _UpdateBridge()
         self._update_bridge.finished.connect(self._on_update_result)
-        self._update_manual = False
-        # 启动 3 秒后静默检查一次更新（仅发现新版本时打扰用户）
-        QTimer.singleShot(3000, lambda: self.check_updates(manual=False))
+        qt_app.screenRemoved.connect(self._display_changed)
+        qt_app.screenAdded.connect(self._screen_added)
+        for screen in qt_app.screens():
+            self._watch_screen(screen)
 
-    # ---------- 热键 ----------
-    def _register_hotkeys(self) -> None:
-        hk = self.config.hotkeys
-        ok = self.hotkeys.register({
-            "capture_region": hk.capture_region,
-            "capture_fullscreen": hk.capture_fullscreen,
-            "capture_scroll": hk.capture_scroll,
-            "pin_last": hk.pin_last,
-            "color_picker": hk.color_picker,
-            "hide_all_pins": hk.hide_all_pins,
-            "ocr_recognize": hk.ocr_recognize,
-        })
-        conflicts = hk.conflicts()
-        if conflicts:
-            log.warning("热键冲突: %s", conflicts)
-            self.tray.notify("拾光 Capture", f"检测到热键冲突：{conflicts[0][0]} 与 {conflicts[0][1]}")
-        if not ok:
-            log.warning("全局热键未生效（pynput 缺失或系统权限不足）")
+    def _watch_screen(self, screen):
+        screen.geometryChanged.connect(self._display_changed)
+        screen.logicalDotsPerInchChanged.connect(self._display_changed)
 
-    def _on_hotkey(self, action: str) -> None:
-        {
-            "capture_region": self.start_region_capture,
-            "capture_fullscreen": self.capture_fullscreen,
-            "capture_scroll": self.start_scroll_capture,
-            "pin_last": self.pin_from_clipboard,
-            "color_picker": self.start_color_pick,
-            "hide_all_pins": self.toggle_pins,
-            "ocr_recognize": self.ocr_recognize,
-        }.get(action, lambda: log.warning("未知热键动作: %s", action))()
+    def _screen_added(self, screen):
+        self._watch_screen(screen)
+        self._display_changed()
 
-    # ---------- 截图 ----------
-    def start_region_capture(self) -> None:
-        self._selector = RegionSelector()
-        self._selector.action_chosen.connect(
-            lambda rect, action: self._dispatch_region(rect, action, long_scroll=False))
-        self._selector.show()
+    def _display_changed(self, *_):
+        if self._selector is not None:
+            self._selector.close()
+            self.tray.notify('拾光 Capture', '显示设置已变化，请重新选择区域。')
+        if self._scroll_session and self._scroll_session.is_running:
+            self._scroll_session.abort()
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            available = screen.availableGeometry()
+            for pin in self._pins:
+                if not any(s.availableGeometry().intersects(pin.frameGeometry()) for s in self.app.screens()):
+                    pin.move(available.topLeft())
 
-    def _dispatch_region(self, rect: Rect, action: str, long_scroll: bool) -> None:
-        """工具栏动作分发：确认 / 长截图 / 贴图 / 识图 / 翻译。"""
-        if action == "scroll":
-            self._start_scroll_session(rect)
+    def _register_hotkeys(self):
+        if self.config.hotkeys.conflicts():
+            self.tray.notify('拾光 Capture', '配置中的快捷键重复，请在设置中修改。托盘菜单仍可使用。')
+            return False
+        registered = self.hotkeys.register(vars(self.config.hotkeys))
+        if not registered:
+            self.tray.notify('拾光 Capture', '全局快捷键暂不可用，请检查系统权限。工作台与托盘仍可使用。')
+        return registered
+
+    def _on_hotkey(self, action):
+        actions = {'capture_region': self.start_region_capture, 'capture_fullscreen': self.capture_fullscreen,
+                   'capture_scroll': self.start_scroll_capture, 'pin_last': self.pin_from_clipboard,
+                   'color_picker': self.start_color_pick, 'hide_all_pins': self.toggle_pins,
+                   'ocr_recognize': self.ocr_recognize}
+        actions.get(action, lambda: None)()
+
+    def open_workspace(self):
+        if self._panel is None:
+            panel = ResultPanel(delegate=self._recognize_panel)
+            panel.capture_requested.connect(self.start_region_capture)
+            panel.open_requested.connect(self.open_image)
+            panel.paste_requested.connect(self.paste_image)
+            panel.file_dropped.connect(self.open_image)
+            panel.image_edited.connect(self._image_changed)
+            panel.cancel_requested.connect(self.cancel_recognition)
+            panel.save_image_requested.connect(self.save_as)
+            panel.pin_requested.connect(self.pin_image)
+            self._panel = panel
+        self._panel.show()
+        self._panel.raise_()
+        self._panel.activateWindow()
+        return self._panel
+
+    def _image_changed(self):
+        self.cancel_recognition()
+        self._last_image = None  # Never retain an unredacted fallback after edits.
+
+    def open_image(self, path=None):
+        if not isinstance(path, str):
+            path, _ = QFileDialog.getOpenFileName(self._panel, '打开图片', '', '图片 (*.png *.jpg *.jpeg)')
+        if not path:
             return
-        if action == "save" and long_scroll:
-            self._start_scroll_session(rect)
+        try:
+            image = load_image(path)
+        except (ValueError, OSError) as exc:
+            self._error(str(exc))
             return
-        image = grab_region(rect)
-        self._last_image = image
-        if action == "save":
-            if self.config.copy_to_clipboard:
+        self.open_workspace().set_image(image)
+
+    def paste_image(self):
+        image = QGuiApplication.clipboard().image()
+        try:
+            validate_size(image.width(), image.height())
+        except ValueError as exc:
+            self._error(str(exc))
+            return
+        self.open_workspace().set_image(image)
+
+    def start_region_capture(self):
+        self._start_selector(False)
+
+    def start_scroll_capture(self):
+        self._start_selector(True)
+
+    def _start_selector(self, scroll):
+        if self._scroll_session and self._scroll_session.is_running:
+            self._error('请先完成或停止当前长截图。')
+            return
+        if self._selector is not None:
+            self._selector.close()
+        if self._picker is not None:
+            self._picker.close()
+        if self._panel:
+            self._panel.hide()
+        if self._settings:
+            self._settings.hide()
+        QTimer.singleShot(120, lambda: self._show_selector(scroll))
+
+    def _show_selector(self, scroll):
+        if self._closing:
+            return
+        if self._selector is not None:
+            self._selector.close()
+        try:
+            selector = RegionSelector()
+        except (ValueError, RuntimeError) as exc:
+            self._error(str(exc))
+            return
+        self._selector = selector
+        selector.action_chosen.connect(lambda rect, action: self._dispatch_region(rect, action, scroll))
+        selector.cancelled.connect(self._clear_selector)
+        selector.show()
+        selector.activateWindow()
+
+    def _clear_selector(self):
+        if self._selector is not None:
+            self._selector.deleteLater()
+            self._selector = None
+
+    def _dispatch_region(self, rect, action, long_scroll=False):
+        selector = self._selector
+        try:
+            if action == 'scroll' or (long_scroll and action == 'copy'):
+                self._clear_selector()
+                QTimer.singleShot(100, lambda: self._start_scroll_session(rect))
+                return
+            image = selector.selected_image(rect) if selector is not None else grab_region(rect)
+            self._last_image = image
+            if action == 'copy':
                 QGuiApplication.clipboard().setImage(image)
-            path = self._save(image)
-            self.tray.notify("拾光 Capture", f"截图已保存：{path.name}（已复制到剪贴板）")
-        elif action == "pin":
-            self.pin_image(image)
-        elif action == "ocr":
-            self._run_ocr_action(image)
-        elif action == "translate":
-            self._run_translate_action(image)
+                self.tray.notify('拾光 Capture', '图片已复制，未保存到磁盘。')
+            elif action == 'save':
+                self.save_as(image)
+            elif action == 'pin':
+                self.pin_image(image)
+            elif action in ('ocr', 'translate'):
+                self._begin_recognition(image, action)
+            elif action == 'edit':
+                self.open_workspace().set_image(image)
+        except (ValueError, RuntimeError, OSError) as exc:
+            self._error(str(exc))
+        finally:
+            self._clear_selector()
 
-    def _on_region(self, rect: Rect) -> None:  # 兼容旧调用
-        self._dispatch_region(rect, "save", long_scroll=False)
+    def _on_region(self, rect):
+        self._dispatch_region(rect, 'copy')
 
-    def capture_fullscreen(self) -> None:
-        from .capture.grabber import grab_fullscreen
-
-        image = grab_fullscreen()
-        if self.config.copy_to_clipboard:
+    def capture_fullscreen(self):
+        try:
+            image = grab_fullscreen()
+            self._last_image = image
             QGuiApplication.clipboard().setImage(image)
-        path = self._save(image)
-        self.tray.notify("拾光 Capture", f"全屏截图已保存：{path.name}")
-        self._last_image = image
+            self.tray.notify('拾光 Capture', '当前屏幕已复制，未保存到磁盘。')
+        except (ValueError, RuntimeError) as exc:
+            self._error(str(exc))
 
-    def _save(self, image) -> Path:
-        save_dir = Path(self.config.save_dir).expanduser()
-        save_dir.mkdir(parents=True, exist_ok=True)
+    def _save(self, image):
+        directory = Path(self.config.save_dir).expanduser()
         now = datetime.now()
-        name = shot_name(now, next_seq(save_dir, now), self.config.image_format)
-        path = save_dir / name
-        image.save(str(path))
+        path = directory / shot_name(now, next_seq(directory, now), self.config.image_format)
+        save_image(image, path)
         return path
 
-    def start_scroll_capture(self) -> None:
-        if self._scroll_session is not None and self._scroll_session.is_running:
-            self.tray.notify("拾光 Capture", "已有长截图任务进行中")
+    def save_as(self, image):
+        if image.isNull():
             return
-        self._selector = RegionSelector()
-        self._selector.action_chosen.connect(
-            lambda rect, action: self._dispatch_region(rect, action, long_scroll=True))
-        self._selector.show()
+        default = Path(self.config.save_dir).expanduser() / shot_name(datetime.now(), 1, self.config.image_format)
+        path, selected = QFileDialog.getSaveFileName(self._panel, '保存当前图片', str(default), 'PNG (*.png);;JPEG (*.jpg)')
+        if not path:
+            return
+        target = Path(path)
+        if not target.suffix:
+            target = target.with_suffix('.jpg' if selected.startswith('JPEG') else '.png')
+            if target.exists() and QMessageBox.question(self._panel, '文件已存在', '替换这个文件？') != QMessageBox.StandardButton.Yes:
+                return
+        try:
+            save_image(image, target)
+        except (ValueError, OSError) as exc:
+            self._error(str(exc))
+            return
+        self.tray.notify('拾光 Capture', '图片已保存。')
+        if self._panel:
+            self._panel.gloss.setText('图片已保存，标注已合并。')
 
-    def _start_scroll_session(self, rect: Rect) -> None:
+    def _start_scroll_session(self, rect):
         session = ScrollCaptureSession(rect)
         preview = ScrollPreviewWindow()
-        session.progressed.connect(
-            lambda h, n: preview.update_progress(h, n))
-        session.preview_ready.connect(
-            lambda img: preview.update_progress(
-                img.height(), session._frames, img))  # noqa: SLF001（同装配层读取）
-        session.finished.connect(lambda img: self._on_scroll_finished(img, preview))
+        session.frame_capturing.connect(preview.hide)
+        session.frame_captured.connect(preview.show)
+        session.progressed.connect(preview.update_progress)
+        session.preview_ready.connect(lambda image: preview.update_progress(image.height(), session._frames, image))
+        session.finished.connect(lambda image: self._on_scroll_finished(image, preview))
         session.failed.connect(lambda msg: self._on_scroll_failed(msg, preview))
         preview.abort_requested.connect(session.abort)
         preview.save_requested.connect(session.abort)
-        self._scroll_session = session
-        self._scroll_preview = preview
-        preview.show()
+        self._scroll_session, self._scroll_preview = session, preview
+        # Keep the preview away from the capture when possible.
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            preview.move(screen.availableGeometry().right() - preview.sizeHint().width(), 30)
+        # Capture the first frame before displaying the preview.
         session.start()
+        if session.is_running:
+            preview.show()
 
-    def _on_scroll_finished(self, image, preview: ScrollPreviewWindow) -> None:
-        frames = self._scroll_session._frames if self._scroll_session else 0  # noqa: SLF001
-        preview.mark_done(image.height(), frames)
-        preview.update_progress(image.height(), frames, image)
-        path = self._save(image)
-        self._last_image = image
-        self.tray.notify("拾光 Capture", f"长截图已保存：{path.name}（{image.height():,} px）")
-        preview.save_btn.setText("关闭")
-        preview.save_btn.clicked.connect(preview.close)
-
-    def _on_scroll_failed(self, msg: str, preview: ScrollPreviewWindow) -> None:
+    def _on_scroll_finished(self, image, preview):
         preview.close()
-        self.tray.notify("拾光 Capture", f"长截图失败：{msg}")
+        if self._closing:
+            return
+        self.open_workspace().set_image(image)
+        self._panel.gloss.setText('长图已保留在工作台。检查拼接后，可手动复制或保存。')
 
-    # ---------- OCR ----------
-    def _ocr_sync(self) -> OCRBackend:
-        """同步创建识别后端（RapidOCR 首次加载 1-3s）。"""
+    def _on_scroll_failed(self, message, preview):
+        self._error(message)
+        if not self._scroll_session or not self._scroll_session.is_running:
+            preview.close()
+
+    @property
+    def ocr(self):
         if self._ocr_override is not None:
             return self._ocr_override
         if self._ocr is None:
             self._ocr = create_backend(self.config.ocr_engine)
         return self._ocr
 
-    @property
-    def ocr(self) -> OCRBackend:
-        """惰性创建识别后端（RapidOCR 首次加载 1-3s，不阻塞启动）。"""
-        return self._ocr_sync()
-
-    def ocr_recognize(self) -> None:
-        img = QGuiApplication.clipboard().image()
-        if img.isNull():
-            img = self._last_image
-        if img is None or img.isNull():
-            self.tray.notify("拾光 Capture", "剪贴板中没有图像，也没有最近截图")
-            return
-        self._ocr_image(img)
-
-    def _image_to_png_bytes(self, img) -> bytes:
-        from PySide6.QtCore import QBuffer, QIODevice
-
-        buf = QBuffer()
-        buf.open(QIODevice.OpenModeFlag.ReadWrite)
-        img.save(buf, "PNG")
-        return bytes(buf.data())
-
-    def _ocr_image(self, img) -> str | None:
-        """对 QImage 执行识别：复制文本 + 通知。返回识别文本（空则 None）。"""
-        try:
-            result = self.ocr.recognize(self._image_to_png_bytes(img))
-        except Exception as exc:
-            self.tray.notify("拾光 Capture", f"识别失败：{exc}")
-            return None
-        if not result.text.strip():
-            self.tray.notify("拾光 Capture", "未识别到文字内容")
-            return None
-        QGuiApplication.clipboard().setText(result.text)
-        preview = result.text.strip().splitlines()[0][:30]
-        self.tray.notify(
-            "拾光 Capture · OCR",
-            f"{len(result.text)} 字 · {result.elapsed_ms}ms · {result.engine}（已复制）「{preview}…」",
-        )
-        return result.text
-
-    # ---------- 识图 / 翻译（QQ 截图同款结果面板）----------
-    def _run_ocr_action(self, img) -> None:
-        """工具栏「识图」：后台识别 → 结果面板（可选中复制 / 翻译 / 重新识别）。"""
-        from .ui.busy import BusyIndicator
-        from .ui.result_panel import ResultPanel
-
-        indicator = BusyIndicator("正在识别文字…")
-        result: dict = {"panel": None, "image": img}
-
-        def rerun() -> None:
-            self._run_ocr_action(img)
-
-        def on_ok(r) -> None:
-            indicator.close()
-            if not r.text.strip():
-                self.tray.notify("拾光 Capture", "未识别到文字内容")
-                return
-            QGuiApplication.clipboard().setText(r.text)
-            panel = result["panel"]
-            if panel is None:
-                panel = ResultPanel(
-                    delegate=lambda image, mode: self._spectrum_delegate(image, mode, rerun))
-                result["panel"] = panel
-            panel.set_image(img)
-            panel.show_result("ocr", r)
-            panel.show()
-            panel.raise_()
-
-        def on_err(msg: str) -> None:
-            indicator.close()
-            self.tray.notify("拾光 Capture", f"识别失败：{msg}")
-
-        self._spawn_recognition(img, indicator, on_ok, on_err)
-
-    def _run_translate_action(self, img) -> None:
-        """工具栏「翻译」：OCR 取原文 → 本地/云端翻译 → 双语对照面板。
-
-        翻译引擎默认走 config.ocr_engine 同源的本地链路；云端后端需
-        config.allow_cloud_translate 显式许可（隐私红线，见 PRD NFR-6）。
-        """
-        from .ui.busy import BusyIndicator
-        from .ui.result_panel import ResultPanel
-        from .translate import translate_text
-
-        indicator = BusyIndicator("正在识别并翻译…")
-        result: dict = {"panel": None, "image": img}
-
-        def rerun() -> None:
-            self._run_translate_action(img)
-
-        def on_ok(r) -> None:
-            indicator.close()
-            if not r.text.strip():
-                self.tray.notify("拾光 Capture", "未识别到文字内容，无法翻译")
-                return
-            try:
-                tr = translate_text(r.text, self.config,
-                                    allow_cloud=self.config.allow_cloud_translate)
-            except Exception as exc:  # noqa: BLE001
-                self.tray.notify("拾光 Capture", f"翻译失败：{exc}")
-                return
-            QGuiApplication.clipboard().setText(tr.target_text)
-            panel = result["panel"]
-            if panel is None:
-                panel = ResultPanel(
-                    delegate=lambda image, mode: self._spectrum_delegate(image, mode, rerun))
-                result["panel"] = panel
-            panel.set_image(img)
-            panel.show_translation(r, tr)
-            panel.show()
-            panel.raise_()
-
-        def on_err(msg: str) -> None:
-            indicator.close()
-            self.tray.notify("拾光 Capture", f"识别失败：{msg}")
-
-        self._spawn_recognition(img, indicator, on_ok, on_err)
-
-    def _spectrum_delegate(self, image, mode: str, rerun) -> None:
-        """结果面板里的「重新识别 / 翻译」委托回调。"""
-        if mode == "ocr":
-            self._run_ocr_action(image)
-        elif mode == "translate":
-            self._run_translate_action(image)
-
-    def _spawn_recognition(self, img, indicator, on_ok, on_err):
-        """把识别放后台线程，经 Qt 信号回主线程（Windows 下引擎加载 >1s）。
-
-        注意：bridge 必须由 controller 持引用直到线程结束——否则 Python GC
-        会销毁底层 QObject，工作线程 emit 时触发访问违例（进程崩溃）。
-        """
-        bridge = _RecognitionBridge()
-        png = self._image_to_png_bytes(img)
-        # 持有引用，避免 GC；线程结束后由 finished 信号清理
-        self._recognition_bridges.append(bridge)
-
-        def cleanup() -> None:
-            if bridge in self._recognition_bridges:
-                self._recognition_bridges.remove(bridge)
-
-        bridge.done.connect(cleanup)
-
-        def worker() -> None:
-            try:
-                backend = self._ocr_sync()
-                bridge.ok.emit(backend.recognize(png))
-            except Exception as exc:  # noqa: BLE001
-                bridge.err.emit(str(exc))
-            finally:
-                bridge.done.emit()
-
-        bridge.ok.connect(on_ok)
-        bridge.err.connect(on_err)
-        threading.Thread(target=worker, daemon=True).start()
-        return bridge
-
-    def recognize(self, png_bytes: bytes, cloud_allowed: bool = False) -> str:
-        """识别入口：隐私守卫在前，任何云端后端未获许可不得调用。"""
+    def recognize(self, png_bytes, cloud_allowed=False):
         assert_privacy_guard(self.ocr, cloud_allowed)
         return self.ocr.recognize(png_bytes).text
 
-    # ---------- 贴图 ----------
-    def pin_image(self, image) -> PinWindow:
+    def ocr_recognize(self):
+        image = QGuiApplication.clipboard().image()
+        if image.isNull():
+            image = self._last_image
+        if image is None or image.isNull():
+            self.open_workspace()
+            self._error('请先打开、粘贴或截取一张图片。')
+            return
+        self._begin_recognition(image, 'ocr')
+
+    def _image_to_png_bytes(self, image):
+        validate_size(image.width(), image.height())
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        if not image.save(buffer, 'PNG'):
+            raise ValueError('无法编码图像，请重新打开图片。')
+        return bytes(buffer.data())
+
+    def _ocr_image(self, image):
+        self._begin_recognition(image, 'ocr')
+
+    def _run_ocr_action(self, image):
+        self._begin_recognition(image, 'ocr')
+
+    def _run_translate_action(self, image):
+        self._begin_recognition(image, 'translate')
+
+    def _begin_recognition(self, image, mode):
+        panel = self.open_workspace()
+        panel.set_image(image)
+        self._recognize_panel(image, mode)
+
+    def _recognize_panel(self, image, mode):
+        self.cancel_recognition()
+        panel = self.open_workspace()
+        try:
+            png = self._image_to_png_bytes(image)
+        except ValueError as exc:
+            self._error(str(exc))
+            return
+        task_id = self._task_id
+        config = deepcopy(self.config)
+        backend_override = self._ocr_override
+        panel.set_busy(True)
+        def on_ok(payload):
+            if self._closing or task_id != self._task_id:
+                return
+            result, translation = payload
+            panel.set_busy(False)
+            if translation is not None:
+                panel.show_translation(result, translation)
+            else:
+                panel.show_result(mode, result)
+            if not result.text.strip():
+                panel.gloss.setText('未识别到文字。请使用更清晰的图片重试。')
+        def on_error(message):
+            if not self._closing and task_id == self._task_id:
+                panel.set_busy(False)
+                panel.gloss.setText(message)
+        bridge = _RecognitionBridge(on_ok, on_error, self._finish_recognition)
+        self._recognition_bridges.append(bridge)
+        self._active_task = bridge
+        def worker():
+            try:
+                if backend_override is None:
+                    payload = self._runner.run(png, mode, config, bridge.cancel)
+                else:
+                    assert_privacy_guard(backend_override, False)
+                    result = backend_override.recognize(png)
+                    translation = None
+                    if mode == 'translate' and not bridge.cancel.is_set():
+                        from .translate import translate_text
+                        translation = translate_text(result.text, config, allow_cloud=False)
+                    payload = result, translation
+                bridge.ok.emit(payload)
+            except RecognitionCancelled:
+                pass
+            except Exception as exc:
+                bridge.err.emit(str(exc))
+            finally:
+                bridge.done.emit()
+        thread = threading.Thread(target=worker, daemon=True)
+        bridge.thread = thread
+        thread.start()
+
+    def _finish_recognition(self, bridge):
+        if bridge in self._recognition_bridges:
+            self._recognition_bridges.remove(bridge)
+        if self._active_task is bridge:
+            self._active_task = None
+
+    def cancel_recognition(self):
+        self._task_id += 1
+        if self._active_task:
+            self._active_task.cancel.set()
+            self._active_task = None
+        if self._panel:
+            self._panel.set_busy(False)
+            self._panel.gloss.setText('任务已取消。图像仍保留，可再次识别。')
+
+    def pin_image(self, image):
+        if image.isNull():
+            return
+        if len(self._pins) >= 20:
+            self._error('已有 20 张贴图，请先关闭一些贴图。')
+            return
         pin = PinWindow(image, self.config.pin_default_opacity)
-        pin.closed.connect(lambda w: self._pins.remove(w) if w in self._pins else None)
+        pin.closed.connect(lambda item: self._pins.remove(item) if item in self._pins else None)
         self._pins.append(pin)
-        pin.show()
+        self._pins_hidden = False
+        for item in self._pins:
+            item.show()
         return pin
 
-    def pin_from_clipboard(self) -> None:
-        img = QGuiApplication.clipboard().image()
-        if img.isNull():
-            img = self._last_image
-        if img is None or img.isNull():
-            self.tray.notify("拾光 Capture", "剪贴板中没有图像")
+    def pin_from_clipboard(self):
+        image = QGuiApplication.clipboard().image()
+        if image.isNull():
+            image = self._last_image
+        if image is None or image.isNull():
+            self._error('剪贴板中没有图片。')
             return
-        self.pin_image(img)
+        self.pin_image(image)
 
-    def toggle_pins(self) -> None:
+    def toggle_pins(self):
         self._pins_hidden = not self._pins_hidden
         for pin in self._pins:
             pin.setVisible(not self._pins_hidden)
 
-    # ---------- 取色 ----------
-    def start_color_pick(self) -> None:
-        self._picker = ColorPickerOverlay(self.config.picker_format)
-        self._picker.color_picked.connect(self._on_color)
-        self._picker.show()
+    def start_color_pick(self):
+        from .ui.picker import ColorPickerOverlay
+        if self._picker:
+            self._picker.close()
+        try:
+            self._picker = ColorPickerOverlay(self.config.picker_format)
+            self._picker.color_picked.connect(self._on_color)
+            self._picker.show()
+        except (ValueError, RuntimeError) as exc:
+            self._error(str(exc))
 
-    def _on_color(self, value: str) -> None:
+    def _on_color(self, value):
         QGuiApplication.clipboard().setText(value)
-        self.tray.notify("拾光 Capture", f"已复制色值 {value}")
+        self.tray.notify('拾光 Capture', f'已复制色值 {value}')
 
-    # ---------- 设置 ----------
-    def open_settings(self) -> None:
+    def open_settings(self):
         if self._settings is not None:
+            self._settings.show()
             self._settings.raise_()
             self._settings.activateWindow()
             return
         win = SettingsWindow(self.config)
         win.settings_saved.connect(self.apply_config)
         win.check_update_requested.connect(lambda: self.check_updates(manual=True))
-        win.destroyed.connect(lambda: setattr(self, "_settings", None))
+        win.destroyed.connect(lambda: setattr(self, '_settings', None))
         self._settings = win
         win.show()
 
-    def apply_config(self, cfg: AppConfig) -> None:
-        """设置保存：落盘 + 热键重注册 + 自启动同步，一次完成。"""
-        self.config = cfg
-        cfg.save()
-        self._register_hotkeys()
-        if cfg.launch_at_login != autostart.is_enabled():
-            if autostart.set_enabled(cfg.launch_at_login):
-                log.info("开机自启动已%s", "开启" if cfg.launch_at_login else "关闭")
-            elif cfg.launch_at_login:
-                self.tray.notify("拾光 Capture", "当前平台暂不支持设置开机自启动")
-        self.tray.notify("拾光 Capture", "设置已保存并生效")
+    def apply_config(self, config):
+        previous = self.config
+        if config.hotkeys != previous.hotkeys and not self.hotkeys.register(vars(config.hotkeys)):
+            self._error('快捷键无法注册，原设置已保留。请检查按键格式和系统权限。')
+            return
+        try:
+            config.save()
+        except OSError:
+            self.hotkeys.register(vars(previous.hotkeys))
+            self._error('设置保存失败，原设置已保留。')
+            return
+        self.config = config
+        if config.launch_at_login != autostart.is_enabled() and not autostart.set_enabled(config.launch_at_login):
+            self._error('设置已保存，但当前系统未能启用开机启动。')
+        if self._settings:
+            self._settings.accept()
+        self.tray.notify('拾光 Capture', '设置已保存。')
 
-    # ---------- 更新 ----------
-    def check_updates(self, manual: bool) -> None:
-        self._update_manual = manual
-
-        def worker() -> None:
-            info = check_for_update(__version__)
-            self._update_bridge.finished.emit(info)
-
+    def check_updates(self, manual=True):
+        if self._update_running:
+            return
+        self._update_running = True
+        def worker():
+            try:
+                result = check_for_update(__version__)
+            except Exception:
+                result = '无法检查更新，请检查网络后重试。'
+            self._update_bridge.finished.emit(result)
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_update_result(self, info: UpdateInfo | None) -> None:
-        if info is not None:
-            text = f"发现新版本 {info.version}"
-            self.tray.notify("拾光 Capture · 有更新", f"{text}，前往 Releases 下载")
-            QGuiApplication.clipboard().setText(info.url)
-            log.info("%s: %s（链接已复制）", text, info.url)
-        elif self._update_manual:
-            self.tray.notify("拾光 Capture", f"已是最新版本 v{__version__}")
-        if self._settings is not None:
-            if info is not None:
-                self._settings.set_update_result(f"发现新版本 {info.version}（链接已复制到剪贴板）")
-            else:
-                self._settings.set_update_result(f"已是最新 v{__version__} · 更新发布于 {RELEASES_PAGE}")
+    def _on_update_result(self, info):
+        self._update_running = False
+        if self._closing:
+            return
+        message = info if isinstance(info, str) else (f'发现新版本 {info.version}，可从设置页打开发布页。' if info else f'当前已是最新版本 v{__version__}。')
+        self.tray.notify('拾光 Capture', message)
+        if self._settings:
+            self._settings.set_update_result(message)
 
-    # ---------- 生命周期 ----------
-    def shutdown(self) -> None:
+    def _error(self, message):
+        self.tray.notify('拾光 Capture', message)
+        if self._panel:
+            self._panel.gloss.setText(message)
+        if self._settings and self._settings.isVisible():
+            self._settings.status.setText(message)
+
+    def shutdown(self):
+        self._closing = True
+        self.cancel_recognition()
+        if self._scroll_session:
+            self._scroll_session.abort()
         self.hotkeys.unregister()
-        self.config.save()
+        # The supervisor sees cancellation within 50ms and terminates its child.
+        for bridge in list(self._recognition_bridges):
+            bridge.cancel.set()
+            bridge.thread.join(timeout=2)
+        self._runner.close()
         self.app.quit()
 
 
-def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+def main(argv=None):
+    multiprocessing.freeze_support()
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
     app = QApplication(argv if argv is not None else sys.argv)
-    app.setApplicationName("shiguang-capture")
-    app.setQuitOnLastWindowClosed(False)  # 托盘常驻
+    app.setApplicationName('shiguang-capture')
+    app.setQuitOnLastWindowClosed(False)
     controller = AppController(app)
-    _ = controller  # 防 GC
+    controller.open_workspace()
     return app.exec()

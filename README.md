@@ -1,101 +1,78 @@
-# 拾光 Capture
+# 拾光 Capture 1.3.0
 
-> 屏幕信息捕获与再利用工具 —— 把屏幕上的信息**直接变成可用内容**。
+本地屏幕捕获与图片校对工具。截图、导入、标注、提取文字，再由你决定复制或保存。
 
-截图只是入口。框选的瞬间，本地 OCR 与结构化引擎已经启动：表格粘进 Excel，代码粘进编辑器，无需离开当前工作流。
+**本次正式发行范围：Linux x86_64、X11 桌面。** 实测 Ubuntu 22.04，系统需 glibc 2.35 或更新版本、图形桌面和中文字体。Windows、macOS、Wayland 为实验支持，不提供这些平台的正式安装包。完整记录见 [验收报告](validation/RELEASE-1.3.0.md)。本版不宣称已经满足 PRD 的全部识别准确率目标。
 
-[![CI](https://github.com/asoming/shiguang-capture/actions/workflows/ci.yml/badge.svg)](https://github.com/asoming/shiguang-capture/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](pyproject.toml)
+## 安装
 
-## 能力总览
-
-| 层 | 能力 | 状态 |
-| --- | --- | --- |
-| L1 捕获层 | 区域 / 窗口 / 全屏 / 固定尺寸截图、滚动长截图、贴图置顶、像素级取色 | V1.0 |
-| L2 识别层 | 本地 OCR（默认）、云端增强（显式开启） | V1.0 |
-| L3 结构化层 | 表格还原、代码保真、公式转 LaTeX、字段抽取 | V1.0 ~ 付费版 |
-| L4 输出层 | 多格式复制、发送至目标应用、就地翻译 | V1.0 |
-| 录屏 | 区域录制、音画分控、画中画、鼠标高亮 | V2.0（独立进程） |
-
-**商业化红线**：本地能力永久免费 · 无广告 · 不强制登录 · 不默认上传 · 识别结果无水印。
-
-## 快速开始
+在 [正式发布页](https://github.com/asoming/shiguang-capture/releases/tag/v1.3.0) 下载 Linux 压缩包与 SHA256SUMS，校验并解压，在解压目录运行：
 
 ```bash
-git clone https://github.com/asoming/shiguang-capture.git
-cd shiguang-capture
-pip install -e ".[all]"      # 完整安装（GUI + OCR）
-python -m shiguang_capture   # 启动（托盘常驻）
+sha256sum -c SHA256SUMS --ignore-missing
+# 解压下载的 tar.gz，然后进入 ShiguangCapture 目录
+./install-linux.sh
 ```
 
-| 热键 | 动作 |
+桌面与应用菜单中会出现 **拾光 Capture**。也可直接运行目录内的 `ShiguangCapture`，无需 Python、联网下载模型或账号。首次运行无需联网。安装位置为 `~/.local/share/shiguang-capture/1.3.0`，启动器为 `~/.local/bin/shiguang-capture`。关闭工作台后驻留托盘；退出请用托盘菜单。
+
+## 功能
+
+- 区域／当前屏幕截图，区域操作使用同一份冻结快照，保留原生像素。
+- PNG/JPEG 打开、拖入、粘贴；原图与结果并排校对，缩放、拖动和文字块定位。
+- 箭头、矩形、文字、画笔、实色遮盖、撤销／重做；复制和保存均合并标注。
+- 图像修改立即取消旧识别、清除旧文字，重新识别当前可见内容。
+- 中英文 RapidOCR，独立进程、串行任务、取消／60 秒超时恢复，空闲五分钟释放模型。
+- 文字／代码日志／简单表格模式。代码仅按可见位置恢复缩进，不补写、不执行。
+- 有完整边框、无合并、最多 30 行 × 12 列的简单表格；保留空格位，单元格编辑与原图定位。
+- 手动复制纯文本、代码块、Markdown 表格、HTML＋TSV；TXT/MD 和全单元格文本类型 XLSX 导出。
+- 表格含公式风险前缀或换行时阻止 HTML＋TSV 复制，引导使用文本型 XLSX；编号、长数字和日期不会被 XLSX 导出转换。
+- 桌面贴图、取色、配置冲突检查、原子保存、手动检查更新。随包模型启动前校验 SHA-256。
+
+OCR 会有识别错误，置信度也不是正确率。代码符号、缩进、中文表格内容仍需人工校对。39 张合成图片的实测结果、原始输出和生成器全部公开；样本量不足以代替真实业务数据集。当前 PRD 的完整质量门槛尚未通过。
+
+截图默认只复制，不自动落盘。OCR 不自动覆盖剪贴板；保存需选择位置。清空会话清除当前图像与识别结果，不清理系统剪贴板、桌面贴图和已保存文件。
+
+| 快捷键 | 动作 |
 | --- | --- |
-| `F1` | 区域截图 |
-| `Shift+F1` | 全屏截图 |
-| `Ctrl+F1` | 滚动长截图（自动滚动 + 拼接 + 实时预览，可随时中止） |
-| `F2` | 取色器 |
-| `F3` | 剪贴板图像贴图 |
-| `F4` | OCR 识别（剪贴板 / 上次截图，本地 RapidOCR 引擎） |
-| `Shift+F3` | 隐藏 / 恢复全部贴图 |
+| F1 | 区域截图：复制／标注／保存／贴图／文字识别 |
+| Shift+F1 | 鼠标所在屏幕截图并复制 |
+| Ctrl+F1 | 滚动长截图（实验） |
+| F2 | 屏幕取色 |
+| F3 | 剪贴板图片贴图 |
+| F4 | 剪贴板图片识别 |
+| Shift+F3 | 隐藏／恢复贴图 |
 
-双击托盘图标打开设置（常规 / 热键 / 贴图与取色 / 识别 / 关于与更新）。
+## 实验与未覆盖范围
 
-## 打包可执行文件
+滚动长截图仅适用于受限静态内容，匹配失败保留已有部分；上限 64 百万像素／单边 32,767。翻译为可选实验功能；正式包未附带 Argos 模型，界面明确显示词典替换降级，不能当作完整译文。复杂表格、合并单元格、窗口专用捕获、录屏和云端服务未实现。
 
-```bash
-pip install pyinstaller
-python scripts/build_exe.py   # 产出 dist/ShiguangCapture/
-```
+单屏 X11 截图和快捷键已实机验证。多屏与混合 DPI 的坐标合成经过自动化验证，尚无多物理屏幕验收证据。跨屏采用最高 DPR 输出，低 DPI 部分会重采样。没有 Windows/macOS 签名、权限恢复及安装实机验收证据。
 
-onedir 目录形态（冷启动快于单文件）。CI 的 package job 在 Windows / macOS / Linux 三平台自动构建并上传 artifact。
+## 开发、验证和打包
 
-仅使用纯逻辑层（无 GUI 依赖，例如做二次开发或 CI）：
+Python 3.11/3.12。Linux 正式包采用 Python 3.12、`requirements-linux.lock` 的精确依赖：
 
 ```bash
-pip install -e .
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-linux.lock
+python -m pip install -e . --no-deps
+QT_QPA_PLATFORM=offscreen SHIGUANG_NO_HOTKEYS=1 pytest
+python -m shiguang_capture --self-test
+python scripts/validate_quality.py
+python scripts/validate_x11.py # 真实 X11 合成窗口，需要桌面会话
+python scripts/check_site.py
+# 打包需系统 libxcb-cursor0；可用 SHIGUANG_XCB_CURSOR 指定解压的库文件
+python scripts/build_exe.py
 ```
 
-## 产品站
+`--self-test` 强制离屏，使用合成图片验证模型、子进程、结构化输出和剪贴板保护。`--check` 只检查基础环境，不能代替完整自测。生成质量样本需系统 Noto CJK 与 DejaVu 字体。其他平台开发可使用 `pip install -e '.[gui,ocr,dev]'`，构建成功不代表实机验收。
 
-`docs/` 为静态产品站（深色主题默认，可切浅色），已通过 GitHub Pages 发布：
-**https://asoming.github.io/shiguang-capture/**
+## 卸载和反馈
 
-本地预览：
+从托盘退出后，删除 `~/.local/share/shiguang-capture`、`~/.local/bin/shiguang-capture`、应用菜单的 `shiguang-capture.desktop` 和桌面的 `拾光 Capture.desktop` 即可卸载。不会删除用户另存的图片与文本。保留配置以便重装，配置位置见设置与 `config.py`。
 
-```bash
-python -m http.server 8080 -d docs
-```
+通过 [GitHub Issues](https://github.com/asoming/shiguang-capture/issues) 报告问题，附版本、桌面环境、复现步骤和脱敏样图；不要上传含敏感内容的截图。
 
-## 架构
-
-```
-src/shiguang_capture/
-├── geometry.py      选区几何（纯逻辑）
-├── config.py        配置与持久化（纯逻辑）
-├── naming.py        文件命名体系（纯逻辑，截图/录屏共享）
-├── colors.py        色值换算（纯逻辑）
-├── updater.py       更新检查（纯逻辑 + 网络分离）
-├── autostart.py     开机自启动（Windows 注册表）
-├── ocr/             OCR 后端协议 + 隐私守卫 + RapidOCR 本地引擎
-├── capture/         屏幕抓取 / 取景框 / 滚动拼接（stitch 纯逻辑）
-├── ui/              贴图 / 取色器 / 托盘 / 设置窗 / 长截图预览 / 图标
-├── hotkeys.py       全局热键（pynput → Qt 信号桥）
-└── app.py           装配层
-```
-
-**设计约束**：纯逻辑层与 Qt 完全解耦——全部单元测试无需显示环境即可运行；录屏模块不进入截图进程，保证热键唤起 ≤ 200ms。
-
-## 开发与测试
-
-```bash
-pip install -e ".[dev]"
-pytest                        # 纯逻辑层单测
-python scripts/check_site.py  # 产品站静态检查
-```
-
-CI（GitHub Actions）在 Windows / macOS / Linux 三平台运行：单元测试矩阵（Py 3.11/3.12）、PySide6 离屏导入冒烟、站点静态检查。
-
-## License
-
-[MIT](LICENSE)
+自有代码采用 [MIT](LICENSE)，模型与依赖见 [第三方声明](THIRD_PARTY_NOTICES.md) 和随包许可证。

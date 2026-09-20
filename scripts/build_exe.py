@@ -37,10 +37,18 @@ def main() -> int:
         "--collect-all", "rapidocr_onnxruntime",   # 模型与配置随包分发
         "--collect-all", "onnxruntime",
         "--collect-all", "cv2",
+        "--collect-data", "shiguang_capture",
         "--workpath", str(ROOT / "build/pyinstaller"),
         "--specpath", str(ROOT / "build"),
         "--distpath", str(ROOT / "dist"),
     ]
+    if sys.platform.startswith('linux'):
+        args += ['--hidden-import', 'pynput.keyboard._xorg', '--hidden-import', 'pynput.mouse._xorg']
+        import os
+        cursor_lib = Path(os.environ.get('SHIGUANG_XCB_CURSOR', '/usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0'))
+        if not cursor_lib.is_file():
+            raise RuntimeError('打包需要 libxcb-cursor0；安装系统库或通过 SHIGUANG_XCB_CURSOR 指定库文件。')
+        args += ['--add-binary', f'{cursor_lib}:.']
     if icon.is_file() and sys.platform == "win32":
         args += ["--icon", str(icon)]
 
@@ -50,7 +58,19 @@ def main() -> int:
     exe = ROOT / "dist/ShiguangCapture/ShiguangCapture.exe"
     if sys.platform != "win32":
         exe = exe.with_suffix("")
-    print("OK ->", exe if exe.exists() else "(见上方输出)")
+    if not exe.exists():
+        raise RuntimeError('打包没有生成可执行文件')
+    import shutil
+    from collect_licenses import collect
+    bundle = exe.parent
+    collect(bundle / 'licenses/dependencies')
+    shutil.copytree(ROOT / 'licenses', bundle / 'licenses', dirs_exist_ok=True)
+    for name in ('LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md'):
+        shutil.copy2(ROOT / name, bundle / name)
+    shutil.copy2(ROOT / 'docs/assets/icon-256.png', bundle / 'icon.png')
+    if sys.platform.startswith('linux'):
+        shutil.copy2(ROOT / 'scripts/install-linux.sh', bundle / 'install-linux.sh')
+    print("OK ->", exe)
     return 0
 
 
