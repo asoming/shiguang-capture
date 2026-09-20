@@ -83,11 +83,11 @@ class RegionSelector(QWidget):
         self._frames = capture_frames() if frames is None else frames
         bounds = union([frame.bounds for frame in self._frames])
         self._bounds = bounds
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
-        )
+        # Cocoa's utility panels cannot enter fullscreen. Its popup level also
+        # sits above the menu bar and Dock without switching desktop Spaces.
+        window_type = (Qt.WindowType.Popup if QGuiApplication.platformName() == 'cocoa'
+                       else Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | window_type)
         # A managed normal window is constrained to the work area by some WMs,
         # leaving the dock exposed and scaling our full-desktop snapshot.
         # X11 fullscreen spans one monitor; bypass the WM for a multi-screen
@@ -120,7 +120,10 @@ class RegionSelector(QWidget):
     def show(self):
         screens = QGuiApplication.screens()
         bounds = QRect(self._bounds.x, self._bounds.y, self._bounds.width, self._bounds.height)
-        if len(screens) == 1 and screens[0].geometry() == bounds:
+        if QGuiApplication.platformName() == 'cocoa':
+            super().show()
+            self.setGeometry(bounds)
+        elif len(screens) == 1 and screens[0].geometry() == bounds:
             self.showFullScreen()
         else:
             super().show()

@@ -53,7 +53,7 @@ def test_menu_opens_exact_file_and_parent_even_with_spaces(library, tmp_path, mo
     assert [action.text() for action in actions] == ['播放', '打开所在文件夹', '删除']
     actions[0].trigger()
     actions[1].trigger()
-    assert opened == [str(path), str(tmp_path)]
+    assert [Path(value) for value in opened] == [path, tmp_path]
 
 
 def test_delete_cancel_failure_and_success_are_safe(library, tmp_path, monkeypatch):

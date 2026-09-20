@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def verify_selector_coverage(app, destination):
-    from PySide6.QtCore import QRect
+    from PySide6.QtCore import QPoint, QRect, Qt
     from PySide6.QtGui import QColor, QImage
     from PySide6.QtTest import QTest
     from shiguang_capture.capture.grabber import ScreenFrame
@@ -41,6 +41,19 @@ def verify_selector_coverage(app, destination):
                 samples.append({'x': x, 'y': y, 'color': pixel.name()})
                 assert max(abs(a-b) for a, b in zip(pixel.getRgb()[:3], expected.getRgb()[:3])) <= 3, samples
             report['screens'].append({'name': screen.name(), 'samples': samples})
+        # The overlay must still accept selection, text input and Escape at its
+        # native window level (especially Cocoa's popup rather than utility).
+        QTest.mousePress(selector, Qt.MouseButton.LeftButton, pos=QPoint(40, 40))
+        QTest.mouseMove(selector, QPoint(400, 250))
+        QTest.mouseRelease(selector, Qt.MouseButton.LeftButton, pos=QPoint(400, 250))
+        selector._on_action('text')
+        QTest.mouseClick(selector._canvas, Qt.MouseButton.LeftButton, pos=QPoint(30, 30))
+        selector._canvas.text_input.setText('Overlay input')
+        QTest.keyClick(selector._canvas.text_input, Qt.Key.Key_Return)
+        assert selector.isVisible() and selector._canvas.marks[0].text == 'Overlay input'
+        QTest.keyClick(selector, Qt.Key.Key_Escape)
+        assert not selector.isVisible()
+        report['interaction'] = 'selection, text confirmation and Escape passed'
         report['status'] = 'passed'
     finally:
         selector.close()
