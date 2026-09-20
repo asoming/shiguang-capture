@@ -107,6 +107,7 @@ def record(connection, options: RecordingOptions):
     import numpy as np
     from .encoder import VideoWriter, check_space
     from .activity import RecordingActivity
+    from .frames import rgb_image
     import queue
     import threading
 
@@ -236,19 +237,18 @@ def record(connection, options: RecordingOptions):
                         raise RuntimeError('未收到屏幕画面。请检查系统屏幕录制权限后重试。')
                     return
                 conversion_start = time.perf_counter()
-                full_image = current_frame.toImage()
-                if full_image.isNull():
-                    raise RuntimeError('无法读取屏幕帧。请检查系统屏幕录制权限。')
                 if options.window_title:
-                    image = full_image
+                    image = rgb_image(current_frame)
                     if writer and (image.width()//2*2, image.height()//2*2) != (writer.video.width, writer.video.height):
                         raise RuntimeError('窗口尺寸已改变，录制已停止；可恢复已录内容。')
                 else:
-                    scale_x, scale_y = full_image.width()/geometry.width(), full_image.height()/geometry.height()
-                    image = full_image.copy(round((region.x()-geometry.x())*scale_x),
-                                        round((region.y()-geometry.y())*scale_y),
-                                        round(region.width()*scale_x), round(region.height()*scale_y))
-                image = image.convertToFormat(QImage.Format.Format_RGB888)
+                    from PySide6.QtCore import QRect
+                    scale_x, scale_y = current_frame.width()/geometry.width(), current_frame.height()/geometry.height()
+                    crop = QRect(round((region.x()-geometry.x())*scale_x), round((region.y()-geometry.y())*scale_y),
+                                 round(region.width()*scale_x), round(region.height()*scale_y))
+                    image = rgb_image(current_frame, crop)
+                if image.isNull():
+                    raise RuntimeError('无法读取屏幕帧。请检查系统屏幕录制权限。')
                 metrics['image_conversion_ms'] += (time.perf_counter()-conversion_start)*1000
                 if writer is None:
                     writer = VideoWriter(Path(options.target), image.width(), image.height(), options.fps, bool(device_ids))

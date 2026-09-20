@@ -1,12 +1,10 @@
-# 拾光 Capture 1.4.0b1
+# 拾光 Capture 1.3.0
 
 本地屏幕捕获与图片校对工具。截图、导入、标注、提取文字，再由你决定复制或保存。
 
-**当前分支是 1.4.0b1 预览版，尚未通过三平台正式发布门槛。** 已有版本的正式范围仍为 1.3.0 Linux X11；其功能与安装说明保存在 [1.3.0 说明](validation/README-1.3.0.md)。下一版按用户 PRD 逐项记录实现、通过证据与缺口，见 [完整验收追踪](validation/PRD-ACCEPTANCE.md)。
+**本次正式发行范围：Linux x86_64、X11 桌面。** 实测 Ubuntu 22.04，系统需 glibc 2.35 或更新版本、图形桌面和中文字体。Windows、macOS、Wayland 为实验支持，不提供这些平台的正式安装包。完整记录见 [验收报告](validation/RELEASE-1.3.0.md)。本版不宣称已经满足 PRD 的全部识别准确率目标。
 
-本轮新增选区内直接标注、独立录屏和中英文 PP-OCRv5 模型，移除了工作台和设置页的大标题及宣传文案。GitHub 上运行 Windows、macOS、Linux 原生桌面测试；通过的云端场景不替代物理多屏、实体麦克风、权限拒绝、签名安装或 Excel 实测。
-
-## 安装已发布稳定版
+## 安装
 
 在 [正式发布页](https://github.com/asoming/shiguang-capture/releases/tag/v1.3.0) 下载 Linux 压缩包与 SHA256SUMS，校验并解压，在解压目录运行：
 
@@ -22,19 +20,14 @@ sha256sum -c SHA256SUMS --ignore-missing
 
 - 区域／当前屏幕截图，区域操作使用同一份冻结快照，保留原生像素。
 - PNG/JPEG 打开、拖入、粘贴；原图与结果并排校对，缩放、拖动和文字块定位。
-- 拖选后直接用浮动工具条标注、复制、保存、贴图或识别；Enter/Ctrl+C 复制、Ctrl+S 保存、Ctrl+Z/Ctrl+Y 撤销重做，右键重选、Esc 退出。
-- 箭头、矩形、文字、画笔、实色遮盖；连续 20 步撤销重做有自动测试，导出合并标注。
-- 独立录屏面板：全屏、区域、窗口，3 秒倒计时，暂停/继续、停止保存 MP4，异常恢复；无声为默认，可明确选择麦克风、系统音源或混音。音源可用性依系统和设备而定。
+- 箭头、矩形、文字、画笔、实色遮盖、撤销／重做；复制和保存均合并标注。
 - 图像修改立即取消旧识别、清除旧文字，重新识别当前可见内容。
 - 中英文 RapidOCR，独立进程、串行任务、取消／60 秒超时恢复，空闲五分钟释放模型。
 - 文字／代码日志／简单表格模式。代码仅按可见位置恢复缩进，不补写、不执行。
 - 有完整边框、无合并、最多 30 行 × 12 列的简单表格；保留空格位，单元格编辑与原图定位。
 - 手动复制纯文本、代码块、Markdown 表格、HTML＋TSV；TXT/MD 和全单元格文本类型 XLSX 导出。
 - 表格含公式风险前缀或换行时阻止 HTML＋TSV 复制，引导使用文本型 XLSX；编号、长数字和日期不会被 XLSX 导出转换。
-- 贴图右键原图识别、鼠标穿透及快捷键/托盘找回；取色像素放大镜、会话颜色历史、HEX/RGB/HSL/HSV/RGBA。
-- 选中文字后右键进行规则清理：默认关闭、差异预览、仅修改选区、可撤销。
-- 配置冲突检查、原子保存、手动检查更新。随包模型启动前校验 SHA-256。
-- 每种模式分别记忆输出格式；JSON 导出保留模式、版本和字符串单元格。
+- 桌面贴图、取色、配置冲突检查、原子保存、手动检查更新。随包模型启动前校验 SHA-256。
 
 OCR 会有识别错误，置信度也不是正确率。代码符号、缩进、中文表格内容仍需人工校对。39 张合成图片的实测结果、原始输出和生成器全部公开；样本量不足以代替真实业务数据集。当前 PRD 的完整质量门槛尚未通过。
 
@@ -49,13 +42,10 @@ OCR 会有识别错误，置信度也不是正确率。代码符号、缩进、�
 | F3 | 剪贴板图片贴图 |
 | F4 | 剪贴板图片识别 |
 | Shift+F3 | 隐藏／恢复贴图 |
-| Ctrl+Shift+F3 | 找回全部贴图并退出鼠标穿透 |
-| F6 | 打开录屏／暂停／继续 |
-| F7 | 停止录屏并保存 |
 
 ## 实验与未覆盖范围
 
-滚动长截图仅适用于受限静态内容，匹配失败保留已有部分；上限 64 百万像素／单边 32,767。翻译为可选实验功能；正式包未附带 Argos 模型，界面明确显示词典替换降级，不能当作完整译文。复杂表格、合并单元格、窗口截图和云端服务未实现。窗口录屏已提供；同名窗口无法可靠区分时会要求改用区域录屏，窗口尺寸变化会停止并保留恢复文件。macOS 系统声音尚未通过验收。
+滚动长截图仅适用于受限静态内容，匹配失败保留已有部分；上限 64 百万像素／单边 32,767。翻译为可选实验功能；正式包未附带 Argos 模型，界面明确显示词典替换降级，不能当作完整译文。复杂表格、合并单元格、窗口专用捕获、录屏和云端服务未实现。
 
 单屏 X11 截图和快捷键已实机验证。多屏与混合 DPI 的坐标合成经过自动化验证，尚无多物理屏幕验收证据。跨屏采用最高 DPR 输出，低 DPI 部分会重采样。没有 Windows/macOS 签名、权限恢复及安装实机验收证据。
 
@@ -68,13 +58,8 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-linux.lock
 python -m pip install -e . --no-deps
-# 安装 C 编译器、make、pkg-config、NASM 后，构建最小动态录屏库
-python scripts/build_media_runtime.py
-python -m pip install --no-deps build/media-runtime/wheels/*.whl
-export LD_LIBRARY_PATH="$PWD/build/media-runtime/runtime/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 QT_QPA_PLATFORM=offscreen SHIGUANG_NO_HOTKEYS=1 pytest
 python -m shiguang_capture --self-test
-python -m shiguang_capture --recording-self-test
 python scripts/validate_quality.py
 python scripts/validate_x11.py # 真实 X11 合成窗口，需要桌面会话
 python scripts/check_site.py
@@ -82,7 +67,7 @@ python scripts/check_site.py
 python scripts/build_exe.py
 ```
 
-`--self-test` 强制离屏，使用合成图片验证模型、子进程、结构化输出和剪贴板保护。`--check` 只检查基础环境，不能代替完整自测。生成质量样本需系统 Noto CJK 与 DejaVu 字体。其他平台开发可使用 `pip install -e '.[gui,ocr,record,dev]'`，构建成功不代表实机验收。
+`--self-test` 强制离屏，使用合成图片验证模型、子进程、结构化输出和剪贴板保护。`--check` 只检查基础环境，不能代替完整自测。生成质量样本需系统 Noto CJK 与 DejaVu 字体。其他平台开发可使用 `pip install -e '.[gui,ocr,dev]'`，构建成功不代表实机验收。
 
 ## 卸载和反馈
 
@@ -91,5 +76,3 @@ python scripts/build_exe.py
 通过 [GitHub Issues](https://github.com/asoming/shiguang-capture/issues) 报告问题，附版本、桌面环境、复现步骤和脱敏样图；不要上传含敏感内容的截图。
 
 自有代码采用 [MIT](LICENSE)，模型与依赖见 [第三方声明](THIRD_PARTY_NOTICES.md) 和随包许可证。
-
-录屏库按精简配置从 FFmpeg 8.0.1 源码构建，动态链接，可替换；对应源码、构建参数与许可证随 Linux 预览包附带。录制只在显式选择的目录产生视频和恢复文件，恢复后不删除原恢复文件。

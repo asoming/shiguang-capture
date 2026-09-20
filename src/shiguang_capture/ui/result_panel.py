@@ -120,6 +120,8 @@ class ResultPanel(QWidget):
         text_layout.addLayout(text_header)
         self.source_edit = QPlainTextEdit()
         self.source_edit.setPlaceholderText('识别结果')
+        self.source_edit.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.source_edit.customContextMenuRequested.connect(self._text_menu)
         text_layout.addWidget(self.source_edit, 1)
         self.table_grid = QTableWidget()
         self.table_grid.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -353,6 +355,26 @@ class ResultPanel(QWidget):
             self._populate_table()
             if self._translation:
                 self.target_edit.setPlainText(self._translation.target_text)
+
+    def _text_menu(self, position):
+        menu = self.source_edit.createStandardContextMenu()
+        menu.addSeparator()
+        clean = menu.addAction('清理选中文字…')
+        clean.setEnabled(self.source_edit.textCursor().hasSelection())
+        if menu.exec(self.source_edit.mapToGlobal(position)) == clean:
+            self._clean_selected_text()
+
+    def _clean_selected_text(self):
+        from .text_cleanup import CleanupDialog
+        cursor = self.source_edit.textCursor()
+        if not cursor.hasSelection():
+            return
+        revision = self.source_edit.document().revision()
+        dialog = CleanupDialog(cursor.selectedText().replace('\u2029', '\n'), self)
+        if dialog.exec() == dialog.DialogCode.Accepted and revision == self.source_edit.document().revision():
+            cursor.beginEditBlock()
+            cursor.insertText(dialog.result)
+            cursor.endEditBlock()
 
     def _swap(self):
         source, target = self.source_edit.toPlainText(), self.target_edit.toPlainText()
