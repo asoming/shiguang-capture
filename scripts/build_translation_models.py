@@ -3,7 +3,7 @@ from pathlib import Path
 import hashlib
 import json
 import shutil
-import urllib.request
+import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -24,8 +24,8 @@ def main():
         archive = cache/filename
         if not archive.exists():
             partial = archive.with_suffix('.download')
-            with urllib.request.urlopen(url, timeout=90) as response, partial.open('wb') as output:
-                shutil.copyfileobj(response, output)
+            subprocess.run(['curl', '--fail', '--location', '--retry', '3', '--connect-timeout', '30',
+                            '--max-time', '300', '--output', str(partial), url], check=True)
             partial.replace(archive)
         if hashlib.sha256(archive.read_bytes()).hexdigest() != digest:
             raise RuntimeError(f'Model checksum mismatch: {filename}')

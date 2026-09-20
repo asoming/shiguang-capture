@@ -111,13 +111,17 @@ def test_existing_text_can_be_clicked_edited_and_undone(selector):
     QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(25, 25))
     canvas.text_input.setText('Original')
     QTest.keyClick(canvas.text_input, Qt.Key.Key_Return)
+    assert selector.isVisible(), 'Text Return must not finish the selection'
     selector._on_action('rect')
     QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(160, 120))
     QTest.mouseMove(canvas, QPoint(210, 170))
     QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(210, 170))
     selector._on_action('view')
     center = canvas.text_bounds(canvas.marks[0]).center() * (canvas.width()/canvas.image.width())
-    QTest.mouseClick(selector, Qt.MouseButton.LeftButton, pos=canvas.mapTo(selector, center.toPoint()))
+    position = canvas.mapTo(selector, center.toPoint())
+    QTest.mousePress(selector, Qt.MouseButton.LeftButton, pos=position)
+    assert canvas.text_input is not None, (selector.isVisible(), canvas.isVisible(), center, canvas.marks, selector._drag_mode)
+    QTest.mouseRelease(selector, Qt.MouseButton.LeftButton, pos=position)
     assert canvas.text_input is not None
     assert canvas.text_input.text() == 'Original'
     canvas.text_input.setText('Corrected')

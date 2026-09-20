@@ -83,14 +83,17 @@ class SelectionCanvas(ImageCanvas):
         self.text_input.setGeometry(x, y, min(280, self.width()-x), 32)
         if index is not None:
             self.text_input.setText(self.marks[index].text)
-        self.text_input.returnPressed.connect(self.commit_text)
-        self.text_input.editingFinished.connect(self.commit_text)
+        editor = self.text_input
+        editor.returnPressed.connect(lambda: self.commit_text(editor))
+        editor.editingFinished.connect(lambda: self.commit_text(editor))
         self.text_input.show()
         self.text_input.setFocus()
         self.text_input.selectAll()
         self.update()
 
-    def commit_text(self):
+    def commit_text(self, sender=None):
+        if sender is not None and sender is not self.text_input:
+            return
         editor, self.text_input = self.text_input, None
         if editor is None:
             return
