@@ -47,9 +47,29 @@ jobs:
         env:
           XDG_SESSION_TYPE: x11
         run: xvfb-run -a -s '-screen 0 1280x800x24' python scripts/accept_desktop_recording.py artifacts/native-recording
-      - name: Record native Windows or macOS desktop
-        if: runner.os != 'Linux'
+      - name: Record native Windows desktop
+        if: runner.os == 'Windows'
         run: python scripts/accept_desktop_recording.py artifacts/native-recording
+      - name: Repeat native macOS capture three times
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && runner.os == 'macOS' }}
+        run: |
+          python - <<'PYTEST'
+          import subprocess, sys
+          outcomes = []
+          for attempt in range(1, 4):
+              result = subprocess.run([sys.executable, 'scripts/accept_desktop_recording.py', f'artifacts/native-recording-{attempt}'])
+              outcomes.append(result.returncode)
+          print('macOS repeated capture exit codes:', outcomes)
+          raise SystemExit(1 if any(outcomes) else 0)
+          PYTEST
+      - name: Native Linux recording controls
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && runner.os == 'Linux' }}
+        env:
+          XDG_SESSION_TYPE: x11
+        run: xvfb-run -a -s '-screen 0 1280x800x24' python scripts/accept_record_controls.py artifacts/record-controls
+      - name: Native Windows and macOS recording controls
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && runner.os != 'Linux' }}
+        run: python scripts/accept_record_controls.py artifacts/record-controls
       - name: Record native Linux window
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && runner.os == 'Linux' }}
         env:
