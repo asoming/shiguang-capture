@@ -57,8 +57,9 @@ def main() -> int:
         if not cursor_lib.is_file():
             raise RuntimeError('打包需要 libxcb-cursor0；安装系统库或通过 SHIGUANG_XCB_CURSOR 指定库文件。')
         args += ['--add-binary', f'{cursor_lib}:.']
-    if icon.is_file() and sys.platform == "win32":
-        args += ["--icon", str(icon)]
+    if sys.platform == "win32":
+        if icon.is_file():
+            args += ["--icon", str(icon)]
         for library in (media/'runtime/bin').glob('*.dll'):
             args += ['--add-binary', f'{library}:.']
     if sys.platform == 'darwin':
@@ -79,10 +80,23 @@ def main() -> int:
     (bundle/'VERSION').write_text(__version__+'\n', encoding='ascii')
     # PDF decoding and the virtual keyboard are not product features. Do not ship
     # their optional Qt modules or plugins (which have separate licensing).
-    for pattern in ('**/libqpdf.so', '**/libqtvirtualkeyboardplugin.so',
-                    '**/libQt6Pdf.so*', '**/libQt6VirtualKeyboard*.so*'):
-        for unused in bundle.glob(pattern):
-            unused.unlink()
+    package_roots = [bundle]
+    if sys.platform == 'darwin':
+        package_roots.append(ROOT/'dist/ShiguangCapture.app/Contents')
+    unused_patterns = (
+        '**/libqpdf.so', '**/libqpdf.dylib', '**/qpdf.dll',
+        '**/libqtvirtualkeyboardplugin.so', '**/libqtvirtualkeyboardplugin.dylib',
+        '**/qtvirtualkeyboardplugin.dll', '**/libQt6Pdf.so*', '**/Qt6Pdf*.dll',
+        '**/QtPdf.framework', '**/QtPdfWidgets.framework',
+        '**/libQt6VirtualKeyboard*.so*', '**/Qt6VirtualKeyboard*.dll', '**/QtVirtualKeyboard.framework',
+    )
+    for package in package_roots:
+        for pattern in unused_patterns:
+            for unused in package.glob(pattern):
+                if unused.is_symlink() or not unused.is_dir():
+                    unused.unlink()
+                else:
+                    shutil.rmtree(unused)
     collect(bundle / 'licenses/dependencies')
     import os
     media = Path(os.environ.get('SHIGUANG_MEDIA_BUILD', ROOT/'build/media-runtime'))
