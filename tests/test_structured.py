@@ -21,6 +21,14 @@ def test_fragmented_code_on_same_line():
     assert code_from_blocks([block('x =',10,10),block('value',50,10)]) == 'x = value'
 
 
+def test_ocr_fragments_keep_visual_lines_without_correcting_text():
+    from shiguang_capture.structured import text_from_blocks
+    blocks = [block('保持原文，', 10, 10, 100), block('00123', 113, 11, 65),
+              block('Hello', 10, 45, 60), block('world', 81, 45, 60)]
+    assert text_from_blocks(blocks) == '保持原文，00123\nHello world'
+    assert text_from_blocks([block('left', 10, 10), block('right', 400, 10)]) == 'left\nright'
+
+
 def test_empty_cells_keep_grid_positions():
     boxes=[[(0,0,100,50),(100,0,200,50)],[(0,50,100,100),(100,50,200,100)]]
     table=table_from_blocks(boxes,[block('00123',5,10),block('last',105,65)])

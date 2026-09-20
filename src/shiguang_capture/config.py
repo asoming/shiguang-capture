@@ -50,6 +50,7 @@ class AppConfig:
     target_lang: str = "auto"          # 翻译目标语言：auto / zh / en
     allow_cloud_translate: bool = False  # 云端翻译总开关（默认关，隐私红线 NFR-6）
     launch_at_login: bool = False
+    output_formats: dict = field(default_factory=dict)
 
     # ---------- 持久化 ----------
     @staticmethod
@@ -84,6 +85,10 @@ class AppConfig:
         if cfg.ocr_engine != "local":
             cfg.ocr_engine = "local"
         cfg.allow_cloud_translate = False
+        choices = {'ocr': {'text', 'json'}, 'code': {'text', 'code', 'json'},
+                   'table': {'text', 'markdown', 'table', 'json'}, 'translate': {'text', 'json'}}
+        cfg.output_formats = {mode: value for mode, value in cfg.output_formats.items()
+                              if mode in choices and isinstance(value, str) and value in choices[mode]}
         return cfg
 
     def save(self, path: Path | None = None) -> Path:

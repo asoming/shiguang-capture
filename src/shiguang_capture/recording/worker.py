@@ -16,6 +16,23 @@ class RecordingOptions:
     fps: int = 30
     microphone: str | None = None
     system_audio: str | None = None
+    window_title: str | None = None
+
+
+def probe_windows(connection):
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtMultimedia import QWindowCapture
+    app = QGuiApplication([])
+    try:
+        descriptions = [window.description() for window in QWindowCapture.capturableWindows() if window.isValid()]
+        # Qt's Python API exposes descriptions but no portable serializable
+        # native window identifier. Never guess between identically named windows.
+        unique = sorted(title for title in set(descriptions) if title and descriptions.count(title) == 1)
+        connection.send({'type': 'windows', 'windows': unique})
+    except Exception as exc:
+        connection.send({'type': 'error', 'message': f'无法读取窗口：{exc}'})
+    finally:
+        connection.close()
 
 
 def probe_audio(connection):
@@ -85,7 +102,7 @@ class AudioCapture:
 def record(connection, options: RecordingOptions):
     from PySide6.QtCore import QTimer, Qt
     from PySide6.QtGui import QGuiApplication, QImage
-    from PySide6.QtMultimedia import QMediaCaptureSession, QScreenCapture, QVideoSink, QVideoFrame
+    from PySide6.QtMultimedia import QMediaCaptureSession, QScreenCapture, QWindowCapture, QVideoSink, QVideoFrame
     import av  # Load the encoder before starting the capture clock.
     import numpy as np
     from .encoder import VideoWriter, check_space
@@ -95,9 +112,11 @@ def record(connection, options: RecordingOptions):
     writer = audio = None
     finished = False
     try:
-        if screen is None:
+        if screen is None and not options.window_title:
             raise RuntimeError('所选屏幕已断开，请重新选择。')
-        geometry = screen.geometry()
+        geometry = screen.geometry() if screen else None
+        if options.window_title and options.region:
+            raise ValueError('窗口录制不能同时指定屏幕区域。')
         if options.region:
             from PySide6.QtCore import QRect
             region = QRect(*options.region)
@@ -105,9 +124,19 @@ def record(connection, options: RecordingOptions):
                 raise ValueError('录屏区域需要位于同一屏幕内。')
         else:
             region = geometry
-        session, capture, sink = QMediaCaptureSession(), QScreenCapture(), QVideoSink()
-        capture.setScreen(screen)
-        session.setScreenCapture(capture)
+        session, sink = QMediaCaptureSession(), QVideoSink()
+        if options.window_title:
+            windows = [window for window in QWindowCapture.capturableWindows()
+                       if window.isValid() and window.description() == options.window_title]
+            if len(windows) != 1:
+                raise RuntimeError('窗口已关闭、标题变化或存在同名窗口，请重新选择，或使用区域录屏。')
+            capture = QWindowCapture()
+            capture.setWindow(windows[0])
+            session.setWindowCapture(capture)
+        else:
+            capture = QScreenCapture()
+            capture.setScreen(screen)
+            session.setScreenCapture(capture)
         session.setVideoSink(sink)
         latest = QVideoFrame()
         started, paused_at, paused_total = None, None, 0.0
@@ -131,8 +160,9 @@ def record(connection, options: RecordingOptions):
 
         sink.videoFrameChanged.connect(frame_changed)
         capture.errorOccurred.connect(lambda error, text: fail(f'屏幕录制失败：{text}'))
-        screen.geometryChanged.connect(lambda *_: fail('屏幕尺寸已改变，录制已停止；可恢复已录内容。'))
-        app.screenRemoved.connect(lambda removed: fail('录制屏幕已断开；可恢复已录内容。') if removed == screen else None)
+        if not options.window_title:
+            screen.geometryChanged.connect(lambda *_: fail('屏幕尺寸已改变，录制已停止；可恢复已录内容。'))
+            app.screenRemoved.connect(lambda removed: fail('录制屏幕已断开；可恢复已录内容。') if removed == screen else None)
 
         def tick():
             nonlocal writer, audio, started, paused_at, paused_total, last_status, last_space_check, finished, latest
@@ -179,10 +209,15 @@ def record(connection, options: RecordingOptions):
                 full_image = latest.toImage()
                 if full_image.isNull():
                     raise RuntimeError('无法读取屏幕帧。请检查系统屏幕录制权限。')
-                scale_x, scale_y = full_image.width()/geometry.width(), full_image.height()/geometry.height()
-                image = full_image.copy(round((region.x()-geometry.x())*scale_x),
-                                    round((region.y()-geometry.y())*scale_y),
-                                    round(region.width()*scale_x), round(region.height()*scale_y))
+                if options.window_title:
+                    image = full_image
+                    if writer and (image.width()//2*2, image.height()//2*2) != (writer.video.width, writer.video.height):
+                        raise RuntimeError('窗口尺寸已改变，录制已停止；可恢复已录内容。')
+                else:
+                    scale_x, scale_y = full_image.width()/geometry.width(), full_image.height()/geometry.height()
+                    image = full_image.copy(round((region.x()-geometry.x())*scale_x),
+                                        round((region.y()-geometry.y())*scale_y),
+                                        round(region.width()*scale_x), round(region.height()*scale_y))
                 image = image.convertToFormat(QImage.Format.Format_RGB888)
                 if writer is None:
                     writer = VideoWriter(Path(options.target), image.width(), image.height(), options.fps, bool(device_ids))

@@ -38,6 +38,8 @@ def main() -> int:
         "--collect-all", "onnxruntime",
         "--collect-all", "cv2",
         "--collect-data", "shiguang_capture",
+        "--collect-all", "av",
+        "--collect-all", "soundcard",
         "--workpath", str(ROOT / "build/pyinstaller"),
         "--specpath", str(ROOT / "build"),
         "--distpath", str(ROOT / "dist"),
@@ -70,6 +72,16 @@ def main() -> int:
         for unused in bundle.glob(pattern):
             unused.unlink()
     collect(bundle / 'licenses/dependencies')
+    import os
+    media = Path(os.environ.get('SHIGUANG_MEDIA_BUILD', ROOT/'build/media-runtime'))
+    if not (media/'ffmpeg-8.0.1.tar.xz').is_file() or not (media/'build-info.json').is_file():
+        raise RuntimeError('先运行 scripts/build_media_runtime.py，并通过 SHIGUANG_MEDIA_BUILD 指定构建目录。')
+    media_notices = bundle/'licenses/recording-runtime'
+    media_notices.mkdir(parents=True, exist_ok=True)
+    for source in (media/'ffmpeg-8.0.1.tar.xz', media/'build-info.json',
+                   media/'ffmpeg-8.0.1/COPYING.LGPLv2.1', media/'ffmpeg-8.0.1/LICENSE.md'):
+        shutil.copy2(source, media_notices/source.name)
+    shutil.copy2(ROOT/'scripts/build_media_runtime.py', media_notices/'build_media_runtime.py')
     shutil.copytree(ROOT / 'licenses', bundle / 'licenses', dirs_exist_ok=True)
     shutil.copytree(ROOT / 'validation', bundle / 'validation', dirs_exist_ok=True)
     shutil.copy2(ROOT / 'requirements-linux.lock', bundle / 'requirements-linux.lock')

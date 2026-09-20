@@ -11,8 +11,16 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
                               QPushButton, QComboBox, QFileDialog, QLineEdit)
 
-from ..recording.worker import RecordingOptions, record, probe_audio
+from ..recording.worker import RecordingOptions, record, probe_audio, probe_windows
 from .theme import STYLE
+
+
+class RecordingBar(QWidget):
+    stop_requested = Signal()
+
+    def closeEvent(self, event):
+        self.stop_requested.emit()
+        event.ignore()  # Keep the indicator visible until the recorder stops.
 
 
 class RecordPanel(QWidget):
@@ -27,8 +35,10 @@ class RecordPanel(QWidget):
         self.setMinimumWidth(420)
         self.process = self.connection = None
         self.probe = self.probe_connection = None
+        self.window_probe = self.window_connection = None
         self.state = 'idle'
         self.region = None
+        self.window_title = None
         self.recovery = None
         self.last_path = None
         self.countdown = 0
@@ -37,6 +47,7 @@ class RecordPanel(QWidget):
         layout.setSpacing(14)
         self.fields = QWidget()
         form = QFormLayout(self.fields)
+        self.form = form
         form.setContentsMargins(0, 0, 0, 0)
         self.screen = QComboBox()
         for index, screen in enumerate(QGuiApplication.screens()):
@@ -51,6 +62,9 @@ class RecordPanel(QWidget):
         bounds = QHBoxLayout()
         bounds.addWidget(self.region_button, 1)
         bounds.addWidget(full)
+        choose_window = QPushButton('窗口…')
+        choose_window.clicked.connect(self._choose_window)
+        bounds.addWidget(choose_window)
         form.addRow('范围', bounds)
         self.audio = QComboBox()
         for text, value in [('不录声音', 'none'), ('麦克风', 'mic'), ('系统声音', 'system'), ('系统声音 + 麦克风', 'both')]:
@@ -62,6 +76,8 @@ class RecordPanel(QWidget):
         form.addRow('系统音源', self.system_audio)
         self.microphone.setEnabled(False)
         self.system_audio.setEnabled(False)
+        form.setRowVisible(self.microphone, False)
+        form.setRowVisible(self.system_audio, False)
         self.fps = QComboBox()
         for fps in (15, 30, 60):
             self.fps.addItem(f'{fps} fps', fps)
@@ -98,7 +114,8 @@ class RecordPanel(QWidget):
         layout.addLayout(footer)
         self.recover_button = recover
 
-        self.bar = QWidget(None, Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
+        self.bar = RecordingBar(None, Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
+        self.bar.stop_requested.connect(self.stop)
         self.bar.setWindowTitle('拾光 · 录制中')
         self.bar.setStyleSheet(STYLE)
         row = QHBoxLayout(self.bar)
@@ -122,7 +139,19 @@ class RecordPanel(QWidget):
 
     def _clear_region(self, *_):
         self.region = None
+        self.window_title = None
         self.region_button.setText('选择区域…')
+
+    def _choose_window(self):
+        if self.window_probe:
+            return
+        context = multiprocessing.get_context('spawn')
+        self.window_connection, child = context.Pipe()
+        self.window_probe = context.Process(target=probe_windows, args=(child,), daemon=True)
+        self.window_probe.start()
+        child.close()
+        self.window_deadline = time.monotonic() + 10
+        self.status.setText('正在读取窗口…')
 
     def set_region(self, rect):
         screen = next((s for s in QGuiApplication.screens()
@@ -133,6 +162,7 @@ class RecordPanel(QWidget):
             return
         self.screen.setCurrentIndex(self.screen.findData(screen.name()))
         self.region = (rect.x, rect.y, rect.width, rect.height)
+        self.window_title = None
         self.region_button.setText(f'{rect.width} × {rect.height} · 重新选择')
 
     def _choose_folder(self):
@@ -144,6 +174,9 @@ class RecordPanel(QWidget):
         mode = self.audio.currentData()
         self.microphone.setEnabled(mode in ('mic', 'both'))
         self.system_audio.setEnabled(mode in ('system', 'both'))
+        self.form.setRowVisible(self.microphone, mode in ('mic', 'both'))
+        self.form.setRowVisible(self.system_audio, mode in ('system', 'both'))
+        self.adjustSize()
         if mode == 'none' or self.probe or self.microphone.count() or self.system_audio.count():
             return
         context = multiprocessing.get_context('spawn')
@@ -182,7 +215,8 @@ class RecordPanel(QWidget):
         target = Path(self.folder.text()).expanduser()/f'录屏_{datetime.now():%Y%m%d_%H%M%S}.mp4'
         options = RecordingOptions(str(target), self.screen.currentData(), self.region, self.fps.currentData(),
                                    self.microphone.currentData() if mode in ('mic', 'both') else None,
-                                   self.system_audio.currentData() if mode in ('system', 'both') else None)
+                                   self.system_audio.currentData() if mode in ('system', 'both') else None,
+                                   self.window_title)
         context = multiprocessing.get_context('spawn')
         self.connection, child = context.Pipe()
         self.process = context.Process(target=record, args=(child, options), daemon=True)
@@ -231,12 +265,39 @@ class RecordPanel(QWidget):
         self.idle.emit()
 
     def _poll(self):
+        if self.window_probe:
+            try:
+                if self.window_connection.poll():
+                    event = self.window_connection.recv()
+                    probe, self.window_probe = self.window_probe, None
+                    self.window_connection.close()
+                    probe.join(timeout=.1)
+                    if event['type'] == 'windows' and event['windows']:
+                        from PySide6.QtWidgets import QInputDialog
+                        title, accepted = QInputDialog.getItem(self, '选择录制窗口', '窗口', event['windows'], 0, False)
+                        if accepted:
+                            self.window_title, self.region = title, None
+                            self.region_button.setText('窗口 · ' + title[:20])
+                            self.region_button.setToolTip(title)
+                        self.status.clear()
+                    else:
+                        self.status.setText(event.get('message', '没有可单独识别的窗口，请使用区域录屏。'))
+            except (EOFError, OSError):
+                pass
+            if self.window_probe and (not self.window_probe.is_alive() or time.monotonic() > self.window_deadline):
+                if self.window_probe.is_alive():
+                    self.window_probe.terminate()
+                    self.status.setText('读取窗口超时，请使用区域录屏。')
+                self.window_probe.join(timeout=.1)
+                self.window_probe = None
+                self.window_connection.close()
         if self.state == 'countdown':
             seconds = self.countdown - time.monotonic()
             if seconds <= 0:
                 self._start()
             else:
                 self.status.setText(f'{int(seconds)+1} 秒后开始录制')
+                self.clock.setText(f'{int(seconds)+1} 秒后开始')
         if self.probe:
             try:
                 if self.probe_connection.poll():
@@ -310,7 +371,7 @@ class RecordPanel(QWidget):
     def _recover(self):
         if self.process is not None:
             return
-        path, _ = QFileDialog.getOpenFileName(self, '恢复录制', self.folder.text(), '录制恢复文件 (*.sgc-recovery.mkv)')
+        path, _ = QFileDialog.getOpenFileName(self, '恢复录制', self.recovery or self.folder.text(), '录制恢复文件 (*.sgc-recovery.mkv)')
         if not path:
             return
         # Recovery runs separately too; large files must not freeze controls.

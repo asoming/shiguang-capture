@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shiguang-capture"
-version = "1.3.0"
+version = "1.4.0b1"
 description = "拾光 Capture — 屏幕信息捕获与再利用工具（截/钉/取/录 + 本地 OCR + 离线翻译）"
 readme = "README.md"
 license = { text = "MIT" }
@@ -77,4 +77,4 @@ addopts = "-q"
 
 [tool.setuptools.package-data]
 "shiguang_capture" = ["assets/*.ttf"]
-"shiguang_capture.ocr" = ["models.json"]
+"shiguang_capture.ocr" = ["models.json", "data/*.onnx", "data/*.txt"]

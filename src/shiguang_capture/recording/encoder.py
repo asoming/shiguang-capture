@@ -25,20 +25,22 @@ def publish_exclusive(source: Path, target: Path) -> Path:
     """Never replace an existing recording, including concurrent name collisions."""
     for index in range(10000):
         candidate = target if not index else target.with_stem(f'{target.stem}-{index}')
+        created = False
         try:
             # Exclusive create also works on FAT/network output folders.
             with candidate.open('xb') as output:
-                try:
-                    with source.open('rb') as input_file:
-                        shutil.copyfileobj(input_file, output, 1024 * 1024)
-                    output.flush()
-                    os.fsync(output.fileno())
-                except BaseException:
-                    candidate.unlink(missing_ok=True)
-                    raise
+                created = True
+                with source.open('rb') as input_file:
+                    shutil.copyfileobj(input_file, output, 1024 * 1024)
+                output.flush()
+                os.fsync(output.fileno())
             return candidate
         except FileExistsError:
             continue
+        except BaseException:
+            if created:
+                candidate.unlink(missing_ok=True)
+            raise
     raise FileExistsError('同名录制文件过多，请换一个名称。')
 
 
@@ -77,7 +79,7 @@ class VideoWriter:
         target.parent.mkdir(parents=True, exist_ok=True)
         check_space(target.parent)
         self.target = target
-        fd, name = tempfile.mkstemp(prefix=f'.{target.stem}-', suffix='.sgc-recovery.mkv', dir=target.parent)
+        fd, name = tempfile.mkstemp(prefix=f'{target.stem}-', suffix='.sgc-recovery.mkv', dir=target.parent)
         os.close(fd)
         self.recovery = Path(name)
         self.container = av.open(name, 'w', format='matroska', options={

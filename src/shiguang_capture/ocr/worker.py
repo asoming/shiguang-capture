@@ -20,9 +20,10 @@ def _serve(connection):
                 assert_privacy_guard(backend, False)
                 from ..structured import code_from_blocks, detect_grid, table_from_blocks
                 boxes = None
-                if mode == 'table':
+                specialized = getattr(backend, 'recognize_'+mode, None) if mode in {'table', 'code'} else None
+                if mode == 'table' and specialized is None:
                     boxes, image = detect_grid(image)
-                result = backend.recognize(image)
+                result = specialized(image) if specialized else backend.recognize(image)
                 result.mode = mode
                 if mode == 'code':
                     result.text = code_from_blocks(result.blocks)

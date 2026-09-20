@@ -29,6 +29,33 @@ def _display_width(text):
     return sum(2 if unicodedata.east_asian_width(c) in {'W', 'F'} else 1 for c in text)
 
 
+def text_from_blocks(blocks):
+    """Join fragments on an observed baseline, preserving all recognized glyphs."""
+    positioned = [(bounds(block), block.get('text', '')) for block in blocks if bounds(block)]
+    if not positioned:
+        return '\n'.join(block.get('text', '') for block in blocks)
+    positioned.sort(key=lambda item: ((item[0][1]+item[0][3])/2, item[0][0]))
+    height = statistics.median(max(1, box[3]-box[1]) for box, text in positioned)
+    rows = []
+    for box, text in positioned:
+        center = (box[1]+box[3])/2
+        if not rows or abs(center-rows[-1][0]) > height*.45:
+            rows.append((center, []))
+        rows[-1][1].append((box, text))
+    lines = []
+    for center, entries in rows:
+        line, previous = '', None
+        for box, text in sorted(entries):
+            if previous is not None:
+                gap = box[0]-previous[2]
+                # Large gaps may be separate columns, so do not imply a sentence.
+                line += '\n' if gap > height*3 else (' ' if gap > height*.3 else '')
+            line += text
+            previous = box
+        lines.append(line)
+    return '\n'.join(lines)
+
+
 def code_from_blocks(blocks):
     """Recover visible monospaced columns. Never repair spelling or execute output."""
     positioned = [(bounds(b), b['text']) for b in blocks if bounds(b) and b.get('text')]
@@ -130,8 +157,9 @@ def table_from_blocks(boxes, blocks):
                     fragments[r][c].append((box, block['text']))
     for r, row in enumerate(fragments):
         for c, entries in enumerate(row):
-            entries.sort(key=lambda item: (item[0][1], item[0][0]))
-            cells[r][c] = '\n'.join(text for box,text in entries)
+            cells[r][c] = text_from_blocks([
+                {'text': text, 'box': [[box[0],box[1]], [box[2],box[1]], [box[2],box[3]], [box[0],box[3]]]}
+                for box, text in entries])
     return TableData(cells, boxes)
 
 

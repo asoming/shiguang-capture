@@ -24,6 +24,42 @@
       "sha256": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c",
       "license": "Apache-2.0",
       "source": "https://github.com/RapidAI/RapidOCR/tree/v1.4.4/python/rapidocr_onnxruntime/models"
+    },
+    {
+      "file": "PP-OCRv5_mobile_rec_onnx.onnx",
+      "bytes": 16534782,
+      "sha256": "da72dc72ca4dc220df0dfde68c1dedc31c58d3e76a25871122e5056227d50092",
+      "package": "app",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/tree/ed152b8b495f84de93cda5709d768548a9127622",
+      "derivation": "Unmodified ONNX"
+    },
+    {
+      "file": "PP-OCRv5_mobile_rec_onnx-keys.txt",
+      "bytes": 74012,
+      "sha256": "d1979e9f794c464c0d2e0b70a7fe14dd978e9dc644c0e71f14158cdf8342af1b",
+      "package": "app",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/tree/ed152b8b495f84de93cda5709d768548a9127622",
+      "derivation": "character_dict from official inference.yml, one character per line; unchanged order"
+    },
+    {
+      "file": "en_PP-OCRv5_mobile_rec_onnx.onnx",
+      "bytes": 7848423,
+      "sha256": "b5f833dfc5d0eb71da397b4efa06ebeee9b431b690a47d6af40d77d8eabc557f",
+      "package": "app",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/tree/3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b",
+      "derivation": "Unmodified ONNX"
+    },
+    {
+      "file": "en_PP-OCRv5_mobile_rec_onnx-keys.txt",
+      "bytes": 1416,
+      "sha256": "e025a66d31f327ba0c232e03f407ae8d105e1e709e7ccb3f408aa778c24e70d6",
+      "package": "app",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/tree/3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b",
+      "derivation": "character_dict from official inference.yml, one character per line; unchanged order"
     }
   ]
 }

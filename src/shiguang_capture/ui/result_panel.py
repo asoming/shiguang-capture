@@ -1,6 +1,7 @@
 """Local image workbench: source, flattened annotations, and editable text."""
 from __future__ import annotations
 from pathlib import Path
+import json
 from PySide6.QtCore import Qt, Signal, QSaveFile, QIODevice, QMimeData
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -10,10 +11,12 @@ from PySide6.QtWidgets import (
 from .canvas import ImageCanvas
 from .theme import STYLE
 from ..structured import table_clipboard, markdown_table, xlsx_bytes, code_block, bounds
+from ..clipboard import write_text, write_image
 
 
 class ResultPanel(QWidget):
     record_requested = Signal()
+    format_changed = Signal(str, str)
     closed = Signal()
     open_requested = Signal()
     capture_requested = Signal()
@@ -24,9 +27,10 @@ class ResultPanel(QWidget):
     save_image_requested = Signal(object)
     pin_requested = Signal(object)
 
-    def __init__(self, delegate=None, parent=None):
+    def __init__(self, delegate=None, parent=None, formats=None):
         super().__init__(parent)
         self._delegate = delegate
+        self._formats = dict(formats or {})
         self._image = None
         self._result = self._translation = None
         self._kind = self._mode = 'ocr'
@@ -137,6 +141,7 @@ class ResultPanel(QWidget):
         format_row.addWidget(QLabel('复制格式', objectName='muted'))
         self.output_format = QComboBox()
         self.output_format.addItem('纯文本', 'text')
+        self.output_format.currentIndexChanged.connect(self._format_changed)
         format_row.addWidget(self.output_format, 1)
         text_layout.addLayout(format_row)
         actions = QHBoxLayout()
@@ -263,6 +268,7 @@ class ResultPanel(QWidget):
         self._mode = mode
         self.source_edit.setStyleSheet("QPlainTextEdit { font-family: 'DejaVu Sans Mono', 'Consolas', monospace; }" if mode == 'code' else '')
         self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(mode)))
+        self.output_format.blockSignals(True)
         self.output_format.clear()
         self.output_format.addItem('纯文本', 'text')
         if mode == 'code':
@@ -270,9 +276,26 @@ class ResultPanel(QWidget):
         elif mode == 'table':
             self.output_format.addItem('Markdown 表格', 'markdown')
             self.output_format.addItem('表格粘贴 (HTML / TSV)', 'table')
+        self.output_format.addItem('JSON', 'json')
+        self.output_format.setCurrentIndex(max(0, self.output_format.findData(self._formats.get(mode, 'text'))))
+        self.output_format.blockSignals(False)
         self.save_text_btn.setText('导出 XLSX' if mode == 'table' else '导出文本')
         for widget in (self.right, self.copy_target, self.swap_btn):
             widget.setVisible(mode == 'translate')
+
+    def _format_changed(self, *_):
+        value = self.output_format.currentData()
+        if value is not None:
+            self._formats[self._mode] = value
+            self.format_changed.emit(self._mode, value)
+
+    def _json_output(self):
+        document = {'schema_version': 1, 'mode': self._kind, 'text': self.source_edit.toPlainText()}
+        if self._kind == 'table' and self._result and self._result.table:
+            document['cells'] = self._table_cells()
+            document['rows'] = self.table_grid.rowCount()
+            document['columns'] = self.table_grid.columnCount()
+        return json.dumps(document, ensure_ascii=False, indent=2)
 
     def set_busy(self, busy):
         self.cancel_btn.setVisible(busy)
@@ -281,8 +304,18 @@ class ResultPanel(QWidget):
             self.gloss.setText('正在本地处理… 可以取消；图像不会上传。')
 
     def _copy_source(self):
+        try:
+            self._copy_source_checked()
+        except RuntimeError as exc:
+            self.gloss.setText(str(exc))
+
+    def _copy_source_checked(self):
         output = self.output_format.currentData()
         text = self.source_edit.toPlainText()
+        if output == 'json':
+            write_text(self._json_output())
+            self.gloss.setText('已复制 JSON')
+            return
         if self._kind == 'table' and self._result and self._result.table:
             cells = self._table_cells()
             if output == 'table':
@@ -291,25 +324,28 @@ class ResultPanel(QWidget):
                 except ValueError as exc:
                     self.gloss.setText(str(exc))
                     return
-                mime = QMimeData()
-                mime.setText(plain)
-                mime.setHtml(rich)
-                QGuiApplication.clipboard().setMimeData(mime)
+                write_text(plain, rich)
                 self.gloss.setText('表格已复制。编号和日期需完全保真时，请优先导出 XLSX。')
                 return
             text = markdown_table(cells) if output == 'markdown' else '\n'.join(' | '.join(row) for row in cells)
         elif output == 'code':
             text = code_block(text)
-        QGuiApplication.clipboard().setText(text)
+        write_text(text)
         self.gloss.setText('文字已复制。')
 
     def _copy_target(self):
-        QGuiApplication.clipboard().setText(self.target_edit.toPlainText())
-        self.gloss.setText('译文已复制。')
+        try:
+            write_text(self.target_edit.toPlainText())
+            self.gloss.setText('译文已复制。')
+        except RuntimeError as exc:
+            self.gloss.setText(str(exc))
 
     def _copy_image(self):
-        QGuiApplication.clipboard().setImage(self.canvas.rendered_image())
-        self.gloss.setText('图片已复制，标注已合并。')
+        try:
+            write_image(self.canvas.rendered_image())
+            self.gloss.setText('图片已复制')
+        except (RuntimeError, ValueError) as exc:
+            self.gloss.setText(str(exc))
 
     def _restore(self):
         if self._result:
@@ -328,6 +364,11 @@ class ResultPanel(QWidget):
             self._delegate(self.canvas.rendered_image(), self.mode_combo.currentData())
 
     def _save_text(self):
+        if self.output_format.currentData() == 'json':
+            path, _ = QFileDialog.getSaveFileName(self, '导出 JSON', '识别结果.json', 'JSON (*.json)')
+            if path:
+                self._write_output(path, self._json_output().encode('utf-8'))
+            return
         if self._kind == 'table' and self._result and self._result.table:
             path, _ = QFileDialog.getSaveFileName(self, '导出文本型表格', '识别表格.xlsx', 'Excel 表格 (*.xlsx)')
             if path:

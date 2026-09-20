@@ -69,11 +69,10 @@ def main():
         buf=io.BytesIO(); image.save(buf,format='PNG'); data=buf.getvalue()
         started=time.perf_counter()
         if mode=='table':
-            boxes,cleaned=detect_grid(data)
-            result=backend.recognize(cleaned)
-            actual=table_from_blocks(boxes,result.blocks).cells
+            result=backend.recognize_table(data)
+            actual=result.table.cells
         else:
-            result=backend.recognize(data)
+            result=backend.recognize_code(data) if mode=='code' else backend.recognize(data)
             actual=code_from_blocks(result.blocks) if mode=='code' else result.text
         record={'id':name,'mode':mode,'sha256':hashlib.sha256(data).hexdigest(),'expected':expected,'actual':actual,'exact':actual==expected,'elapsed_ms':round((time.perf_counter()-started)*1000)}
         if mode!='table':

@@ -17,6 +17,7 @@ from .capture.grabber import grab_fullscreen, grab_region
 from .capture.scroller import ScrollCaptureSession
 from .capture.selector import RegionSelector
 from .config import AppConfig
+from .clipboard import write_text, write_image
 from .hotkeys import HotkeyManager
 from .images import load_image, save_image, validate_size
 from .naming import next_seq, shot_name
@@ -152,7 +153,8 @@ class AppController:
 
     def open_workspace(self):
         if self._panel is None:
-            panel = ResultPanel(delegate=self._recognize_panel)
+            panel = ResultPanel(delegate=self._recognize_panel, formats=self.config.output_formats)
+            panel.format_changed.connect(self._remember_output_format)
             panel.capture_requested.connect(self.start_region_capture)
             panel.record_requested.connect(self.open_recording)
             panel.open_requested.connect(self.open_image)
@@ -167,6 +169,13 @@ class AppController:
         self._panel.raise_()
         self._panel.activateWindow()
         return self._panel
+
+    def _remember_output_format(self, mode, output):
+        self.config.output_formats[mode] = output
+        try:
+            self.config.save()
+        except OSError:
+            self._panel.gloss.setText('格式已在本次会话记住；配置目录暂不可写。')
 
     def open_recording(self):
         if self._record_panel is None:
@@ -301,7 +310,7 @@ class AppController:
             image = selector.selected_image(rect) if selector is not None else grab_region(rect)
             self._last_image = image
             if action == 'copy':
-                QGuiApplication.clipboard().setImage(image)
+                write_image(image)
                 self.tray.notify('拾光 Capture', '已复制')
             elif action == 'save':
                 self.save_as(image)
@@ -323,7 +332,7 @@ class AppController:
         try:
             image = grab_fullscreen()
             self._last_image = image
-            QGuiApplication.clipboard().setImage(image)
+            write_image(image)
             self.tray.notify('拾光 Capture', '当前屏幕已复制，未保存到磁盘。')
         except (ValueError, RuntimeError) as exc:
             self._error(str(exc))
@@ -541,8 +550,11 @@ class AppController:
             self._error(str(exc))
 
     def _on_color(self, value):
-        QGuiApplication.clipboard().setText(value)
-        self.tray.notify('拾光 Capture', f'已复制色值 {value}')
+        try:
+            write_text(value)
+            self.tray.notify('拾光 Capture', f'已复制色值 {value}')
+        except RuntimeError as exc:
+            self._error(str(exc))
 
     def open_settings(self):
         if self._settings is not None:
