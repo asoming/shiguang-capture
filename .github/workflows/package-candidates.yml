@@ -71,16 +71,21 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force 'artifacts/package-tests' | Out-Null
-          foreach ($argument in @('--self-test','--recording-self-test')) {
-            $env:SHIGUANG_SELF_TEST_LOG = Join-Path $PWD ('artifacts/package-tests/' + $argument.TrimStart('-') + '.log')
-            $process = Start-Process -FilePath 'dist/ShiguangCapture/ShiguangCapture.exe' -ArgumentList $argument -PassThru
+          $checks = @(
+            @{ Name = 'self-test'; Arguments = @('--self-test') },
+            @{ Name = 'recording-self-test'; Arguments = @('--recording-self-test') },
+            @{ Name = 'native-recording'; Arguments = @('--recording-desktop-test', 'artifacts/package-native') }
+          )
+          foreach ($check in $checks) {
+            $env:SHIGUANG_SELF_TEST_LOG = Join-Path $PWD ('artifacts/package-tests/' + $check.Name + '.log')
+            $process = Start-Process -FilePath 'dist/ShiguangCapture/ShiguangCapture.exe' -ArgumentList $check.Arguments -PassThru
             if (-not $process.WaitForExit(180000)) {
               $process.Kill($true)
               Get-Content $env:SHIGUANG_SELF_TEST_LOG -ErrorAction SilentlyContinue
-              throw "Standalone test timed out: $argument"
+              throw "Standalone test timed out: $($check.Name)"
             }
             Get-Content $env:SHIGUANG_SELF_TEST_LOG -ErrorAction SilentlyContinue
-            if ($process.ExitCode -ne 0) { throw "Standalone test failed: $argument ($($process.ExitCode))" }
+            if ($process.ExitCode -ne 0) { throw "Standalone test failed: $($check.Name) ($($process.ExitCode))" }
           }
           Compress-Archive -Path 'dist/ShiguangCapture' -DestinationPath 'dist/ShiguangCapture-Windows-x86_64-preview.zip'
       - name: Test standalone macOS application
@@ -97,6 +102,7 @@ jobs:
             dist/ShiguangCapture-macOS-arm64-preview.tar.gz
             dist/ShiguangCapture-Windows-x86_64-preview.zip
             artifacts/package-tests/
+            artifacts/package-native/
           retention-days: 14
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -106,3 +112,4 @@ jobs:
             build/media-runtime/ffmpeg-8.0.1/ffbuild/config.log
             build/pyinstaller/ShiguangCapture/warn-ShiguangCapture.txt
             artifacts/package-tests/
+            artifacts/package-native/
