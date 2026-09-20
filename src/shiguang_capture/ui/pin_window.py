@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QImage, QMouseEvent, QPixmap, QWheelEvent
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel, QMenu, QMessageBox
 
 MIN_OPACITY, MAX_OPACITY = 0.1, 1.0
 MIN_SCALE, MAX_SCALE = 0.2, 4.0
@@ -18,10 +18,14 @@ MIN_SCALE, MAX_SCALE = 0.2, 4.0
 
 class PinWindow(QLabel):
     closed = Signal(object)  # self
+    recognize_requested = Signal(QImage)
+    edit_requested = Signal(QImage)
 
-    def __init__(self, image: QImage, opacity: float = 1.0) -> None:
+    def __init__(self, image: QImage, opacity: float = 1.0, restore_shortcut='ctrl+shift+f3') -> None:
         super().__init__()
-        self._image = image
+        self._image = image.copy()
+        self._passthrough = False
+        self._restore_shortcut = restore_shortcut
         self._scale = 1.0
         self._drag_pos: QPoint | None = None
         self.setWindowFlags(
@@ -30,9 +34,51 @@ class PinWindow(QLabel):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setWindowOpacity(max(MIN_OPACITY, min(MAX_OPACITY, opacity)))
         self._render()
-        self.setToolTip("拖动移动 · 滚轮调透明度 · Ctrl+滚轮缩放 · 双击关闭")
+        self.setToolTip("拖动移动 · 滚轮调透明度 · Ctrl+滚轮缩放 · 右键菜单 · 双击关闭")
+
+    def set_passthrough(self, enabled):
+        self._passthrough = enabled
+        position = self.pos()
+        self.setWindowFlag(Qt.WindowType.WindowTransparentForInput, enabled)
+        self.move(position)
+        self.show()
+
+    def restore(self):
+        self.set_passthrough(False)
+        self.show()
+        self.raise_()
+
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        copy = menu.addAction('复制图片')
+        recognize = menu.addAction('识别文字')
+        edit = menu.addAction('打开图片工作台')
+        menu.addSeparator()
+        passthrough = menu.addAction('鼠标穿透…')
+        close = menu.addAction('关闭贴图')
+        chosen = menu.exec(event.globalPos())
+        if chosen == copy:
+            from ..clipboard import write_image
+            try:
+                write_image(self._image)
+            except RuntimeError as exc:
+                QMessageBox.warning(self, '复制失败', str(exc))
+        elif chosen == recognize:
+            self.recognize_requested.emit(self._image.copy())
+        elif chosen == edit:
+            self.edit_requested.emit(self._image.copy())
+        elif chosen == passthrough:
+            answer = QMessageBox.question(self, '鼠标穿透',
+                f'开启后鼠标会穿过此贴图。\n按 {self._restore_shortcut}，或在托盘菜单选“找回全部贴图”，可退出穿透。',
+                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel)
+            if answer == QMessageBox.StandardButton.Ok:
+                self.set_passthrough(True)
+        elif chosen == close:
+            self.close()
 
     # ---------- 渲染 ----------
     def _render(self) -> None:

@@ -27,6 +27,7 @@ jobs:
         with:
           arch: x64
       - uses: msys2/setup-msys2@v2
+        id: msys2
         if: runner.os == 'Windows'
         with:
           msystem: MSYS
@@ -40,7 +41,7 @@ jobs:
       - name: Build media runtime on Windows
         if: runner.os == 'Windows'
         env:
-          SHIGUANG_MSYS_BASH: C:\msys64\usr\bin\bash.exe
+          SHIGUANG_MSYS_BASH: ${{ steps.msys2.outputs.msys2-location }}\usr\bin\bash.exe
         run: python scripts/build_media_runtime.py
       - name: Install custom encoder wheel
         shell: bash

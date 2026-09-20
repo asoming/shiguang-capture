@@ -49,7 +49,7 @@ def main():
     if sys.platform == 'win32':
         bash = os.environ['SHIGUANG_MSYS_BASH']
         def unix_path(path):
-            return subprocess.check_output([bash, '-c', 'cygpath -u '+shlex.quote(str(path))], text=True).strip()
+            return subprocess.check_output([bash, '-c', '/usr/bin/cygpath -u '+shlex.quote(str(path))], text=True).strip()
         compiler = shutil.which('cl')
         if compiler is None:
             raise RuntimeError('Use an x64 Visual Studio developer environment before building.')
@@ -57,7 +57,7 @@ def main():
         configure = ['./configure', f'--prefix={unix_path(prefix)}', '--toolchain=msvc', *FLAGS]
         def build(command):
             # MSVC link.exe must take precedence over MSYS's unrelated link tool.
-            script = 'export PATH='+shlex.quote(compiler_path)+':"$PATH"; '+shlex.join(command)
+            script = 'export PATH='+shlex.quote(compiler_path)+':/usr/bin:"$PATH"; '+shlex.join(command)
             subprocess.run([bash, '-c', script], cwd=source, check=True)
     else:
         configure = ['./configure', f'--prefix={prefix}', *FLAGS]

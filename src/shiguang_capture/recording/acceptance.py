@@ -26,7 +26,7 @@ def main(output_path=None, window_mode=False):
     report['capture_mode'] = 'window' if window_mode else 'region'
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
-    window = QWidget(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
+    window = QWidget(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
     window.setWindowTitle('Shiguang synthetic recording test')
     window.resize(400, 260)
     window.move(app.primaryScreen().availableGeometry().topLeft() + QPoint(80, 80))

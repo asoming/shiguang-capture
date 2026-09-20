@@ -100,13 +100,15 @@ class AudioCapture:
 
 
 def record(connection, options: RecordingOptions):
-    from PySide6.QtCore import QTimer, Qt
+    from PySide6.QtCore import QObject, Signal, Slot
     from PySide6.QtGui import QGuiApplication, QImage
     from PySide6.QtMultimedia import QMediaCaptureSession, QScreenCapture, QWindowCapture, QVideoSink, QVideoFrame
     import av  # Load the encoder before starting the capture clock.
     import numpy as np
     from .encoder import VideoWriter, check_space
     from .activity import RecordingActivity
+    import queue
+    import threading
 
     app = QGuiApplication([])
     screen = next((s for s in app.screens() if s.name() == options.screen), None)
@@ -114,6 +116,10 @@ def record(connection, options: RecordingOptions):
     activity = RecordingActivity()
     metrics = {'frames': 0, 'image_conversion_ms': 0.0, 'encoding_ms': 0.0}
     finished = False
+    encoder_thread = capture = None
+    stop_clock = threading.Event()
+    frame_lock = threading.Lock()
+    capture_errors = queue.SimpleQueue()
     try:
         if screen is None and not options.window_title:
             raise RuntimeError('所选屏幕已断开，请重新选择。')
@@ -141,6 +147,15 @@ def record(connection, options: RecordingOptions):
             capture.setScreen(screen)
             session.setScreenCapture(capture)
         session.setVideoSink(sink)
+        class CaptureControl(QObject):
+            requested = Signal(bool)
+
+            @Slot(bool)
+            def apply(self, active):
+                capture.start() if active else capture.stop()
+
+        control = CaptureControl()
+        control.requested.connect(control.apply)
         latest = QVideoFrame()
         started, paused_at, paused_total = None, None, 0.0
         deadline = time.monotonic() + 15
@@ -152,32 +167,37 @@ def record(connection, options: RecordingOptions):
             if finished:
                 return
             finished = True
-            connection.send({'type': 'error', 'message': message,
-                             'recovery': str(writer.recovery) if writer else None})
-            app.quit()
+            try:
+                connection.send({'type': 'error', 'message': message,
+                                 'recovery': str(writer.recovery) if writer else None})
+            finally:
+                app.quit()
 
         def frame_changed(frame):
             nonlocal latest
             if frame.isValid() and paused_at is None:
-                latest = QVideoFrame(frame)
+                with frame_lock:
+                    latest = QVideoFrame(frame)
 
         sink.videoFrameChanged.connect(frame_changed)
-        capture.errorOccurred.connect(lambda error, text: fail(f'屏幕录制失败：{text}'))
+        capture.errorOccurred.connect(lambda error, text: capture_errors.put(f'屏幕录制失败：{text}'))
         if not options.window_title:
-            screen.geometryChanged.connect(lambda *_: fail('屏幕尺寸已改变，录制已停止；可恢复已录内容。'))
-            app.screenRemoved.connect(lambda removed: fail('录制屏幕已断开；可恢复已录内容。') if removed == screen else None)
+            screen.geometryChanged.connect(lambda *_: capture_errors.put('屏幕尺寸已改变，录制已停止；可恢复已录内容。'))
+            app.screenRemoved.connect(lambda removed: capture_errors.put('录制屏幕已断开；可恢复已录内容。') if removed == screen else None)
 
         def tick():
             nonlocal writer, audio, started, paused_at, paused_total, last_status, last_space_check, finished, latest, deadline
             if finished:
                 return
             try:
+                if not capture_errors.empty():
+                    raise RuntimeError(capture_errors.get_nowait())
                 now = time.monotonic()
                 while connection.poll():
                     command = connection.recv()
                     if command == 'stop':
                         finished = True
-                        capture.stop()
+                        control.requested.emit(False)
                         if audio:
                             audio.close()
                             for chunk in audio.take():
@@ -191,7 +211,7 @@ def record(connection, options: RecordingOptions):
                         return
                     if command == 'pause' and started is not None and paused_at is None:
                         paused_at = now
-                        capture.stop()
+                        control.requested.emit(False)
                         activity.stop()
                         if audio:
                             audio.pause()
@@ -199,21 +219,24 @@ def record(connection, options: RecordingOptions):
                     if command == 'resume' and paused_at is not None:
                         paused_total += now - paused_at
                         paused_at = None
-                        latest = QVideoFrame()
+                        with frame_lock:
+                            latest = QVideoFrame()
                         deadline = now + 15
                         activity.start()
                         if audio:
                             audio.active.set()
-                        capture.start()
+                        control.requested.emit(True)
                         connection.send({'type': 'recording'})
                 if paused_at is not None:
                     return
-                if not latest.isValid():
+                with frame_lock:
+                    current_frame = QVideoFrame(latest)
+                if not current_frame.isValid():
                     if now > deadline:
                         raise RuntimeError('未收到屏幕画面。请检查系统屏幕录制权限后重试。')
                     return
                 conversion_start = time.perf_counter()
-                full_image = latest.toImage()
+                full_image = current_frame.toImage()
                 if full_image.isNull():
                     raise RuntimeError('无法读取屏幕帧。请检查系统屏幕录制权限。')
                 if options.window_title:
@@ -255,17 +278,29 @@ def record(connection, options: RecordingOptions):
                 finished = False
                 fail(str(exc))
 
-        timer = QTimer()
-        timer.setTimerType(Qt.TimerType.PreciseTimer)
-        timer.setInterval(max(1, round(1000/options.fps)))
-        timer.timeout.connect(tick)
-        timer.start()
+        def encode_loop():
+            # A native GUI event loop can delay timers during window capture,
+            # especially on macOS. Keep encoding cadence on its own clock while
+            # all capture start/stop operations stay on the Qt main thread.
+            while not finished and not stop_clock.is_set():
+                began = time.monotonic()
+                tick()
+                stop_clock.wait(max(.001, 1/options.fps-(time.monotonic()-began)))
+
         activity.start()
         capture.start()
+        encoder_thread = threading.Thread(target=encode_loop, name='screen-encoder', daemon=True)
+        encoder_thread.start()
         app.exec()
     except Exception as exc:
         connection.send({'type': 'error', 'message': str(exc), 'recovery': str(writer.recovery) if writer else None})
     finally:
+        finished = True
+        stop_clock.set()
+        if encoder_thread:
+            encoder_thread.join()
+        if capture:
+            capture.stop()
         activity.stop()
         if audio:
             audio.close()

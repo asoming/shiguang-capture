@@ -96,6 +96,7 @@ class AppController:
             (self.tray.action_pick, self.start_color_pick),
             (self.tray.action_ocr, self.ocr_recognize),
             (self.tray.action_hide_pins, self.toggle_pins),
+            (self.tray.action_restore_pins, self.restore_pins),
             (self.tray.action_settings, self.open_settings),
             (self.tray.action_open, self.open_image),
             (self.tray.action_workspace, self.open_workspace),
@@ -150,6 +151,7 @@ class AppController:
         actions = {'capture_region': self.start_region_capture, 'capture_fullscreen': self.capture_fullscreen,
                    'capture_scroll': self.start_scroll_capture, 'pin_last': self.pin_from_clipboard,
                    'color_picker': self.start_color_pick, 'hide_all_pins': self.toggle_pins,
+                   'restore_all_pins': self.restore_pins,
                    'ocr_recognize': self.ocr_recognize,
                    'record_toggle': self.toggle_recording, 'record_stop': self.stop_recording}
         actions.get(action, lambda: None)()
@@ -519,7 +521,9 @@ class AppController:
         if len(self._pins) >= 20:
             self._error('已有 20 张贴图，请先关闭一些贴图。')
             return
-        pin = PinWindow(image, self.config.pin_default_opacity)
+        pin = PinWindow(image, self.config.pin_default_opacity, self.config.hotkeys.restore_all_pins)
+        pin.recognize_requested.connect(self._run_ocr_action)
+        pin.edit_requested.connect(lambda source: self.open_workspace().set_image(source))
         pin.closed.connect(lambda item: self._pins.remove(item) if item in self._pins else None)
         self._pins.append(pin)
         self._pins_hidden = False
@@ -540,6 +544,14 @@ class AppController:
         self._pins_hidden = not self._pins_hidden
         for pin in self._pins:
             pin.setVisible(not self._pins_hidden)
+
+    def restore_pins(self):
+        self._pins_hidden = False
+        screens = self.app.screens()
+        for pin in self._pins:
+            pin.restore()
+            if screens and not any(s.availableGeometry().intersects(pin.frameGeometry()) for s in screens):
+                pin.move(screens[0].availableGeometry().topLeft())
 
     def start_color_pick(self):
         from .ui.picker import ColorPickerOverlay

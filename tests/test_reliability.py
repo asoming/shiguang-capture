@@ -275,3 +275,20 @@ def test_modifier_chord_does_not_fire_bare_function_key():
     assert fired == ['screen']
     matcher.press('f1')
     assert fired == ['screen', 'region']
+
+
+def test_ten_pins_restore_visible_and_exit_passthrough(controller, app):
+    for _ in range(10):
+        controller.pin_image(image(20, 20))
+    first = controller._pins[0]
+    first.set_passthrough(True)
+    first.move(-100000, -100000)
+    controller.toggle_pins()
+    assert all(not pin.isVisible() for pin in controller._pins)
+    controller.restore_pins()
+    assert len(controller._pins) == 10
+    assert all(pin.isVisible() and not pin._passthrough for pin in controller._pins)
+    assert app.primaryScreen().availableGeometry().intersects(first.frameGeometry())
+    for pin in list(controller._pins):
+        pin.close()
+    assert not controller._pins

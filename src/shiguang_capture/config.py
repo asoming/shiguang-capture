@@ -20,6 +20,7 @@ class HotkeyConfig:
     pin_last: str = "f3"
     color_picker: str = "f2"
     hide_all_pins: str = "shift+f3"
+    restore_all_pins: str = "ctrl+shift+f3"
     ocr_recognize: str = "f4"
     record_toggle: str = "f6"
     record_stop: str = "f7"
