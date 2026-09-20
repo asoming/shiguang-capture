@@ -179,3 +179,21 @@ def test_deleting_one_text_then_clicking_another_keeps_correct_target(selector):
     canvas.undo()
     canvas.undo()
     assert [mark.text for mark in canvas.marks] == ['First', 'Second']
+
+
+def test_full_desktop_selector_uses_fullscreen_including_reserved_dock(qt_session):
+    screen = qt_session.primaryScreen()
+    if len(qt_session.screens()) != 1:
+        pytest.skip('Single-monitor fullscreen regression')
+    geometry = screen.geometry()
+    frame = QImage(geometry.size(), QImage.Format.Format_RGB32)
+    frame.fill(QColor('white'))
+    selector = RegionSelector([ScreenFrame(Rect(*geometry.getRect()), frame, 1)])
+    selector.show()
+    qt_session.processEvents()
+    assert selector.isFullScreen()
+    assert selector.geometry() == geometry
+    output = selector.grab().toImage()
+    assert output.pixelColor(output.width()//2, output.height()-2).lightness() < 180
+    selector.close()
+    selector.deleteLater()

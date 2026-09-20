@@ -83,12 +83,18 @@ class RegionSelector(QWidget):
         self._frames = capture_frames() if frames is None else frames
         bounds = union([frame.bounds for frame in self._frames])
         self._bounds = bounds
-        self.setGeometry(bounds.x, bounds.y, bounds.width, bounds.height)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
         )
+        # A managed normal window is constrained to the work area by some WMs,
+        # leaving the dock exposed and scaling our full-desktop snapshot.
+        # X11 fullscreen spans one monitor; bypass the WM for a multi-screen
+        # selection so the virtual-desktop geometry stays intact.
+        if QGuiApplication.platformName() == 'xcb' and len(QGuiApplication.screens()) > 1:
+            self.setWindowFlag(Qt.WindowType.X11BypassWindowManagerHint)
+        self.setGeometry(bounds.x, bounds.y, bounds.width, bounds.height)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMouseTracking(True)
 
@@ -111,6 +117,16 @@ class RegionSelector(QWidget):
         self.setCursor(Qt.CursorShape.CrossCursor)
 
     # ---------- 生命周期 ----------
+    def show(self):
+        screens = QGuiApplication.screens()
+        bounds = QRect(self._bounds.x, self._bounds.y, self._bounds.width, self._bounds.height)
+        if len(screens) == 1 and screens[0].geometry() == bounds:
+            self.showFullScreen()
+        else:
+            super().show()
+        self.raise_()
+        self.activateWindow()
+
     def showEvent(self, e) -> None:  # noqa: N802
         super().showEvent(e)
         if self._snapshot is None:

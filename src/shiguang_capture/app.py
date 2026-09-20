@@ -211,12 +211,20 @@ class AppController:
             self._launcher.hide()
         if self._record_panel is None:
             from .ui.record_panel import RecordPanel
-            self._record_panel = RecordPanel()
+            self._record_panel = RecordPanel(self.config.record_dir)
             self._record_panel.choose_region.connect(self._choose_record_region)
             self._record_panel.idle.connect(self._recording_idle)
+            self._record_panel.folder_changed.connect(self._remember_record_folder)
         self._record_panel.show()
         self._record_panel.raise_()
         self._record_panel.activateWindow()
+
+    def _remember_record_folder(self, folder):
+        self.config.record_dir = folder
+        try:
+            self.config.save()
+        except OSError:
+            self._record_panel.status.setText('保存位置已在本次会话记住；配置目录暂不可写。')
 
     def toggle_recording(self):
         if self._record_panel and self._record_panel.active:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shiguang-capture"
-version = "1.4.0"
+version = "1.4.1"
 description = "拾光 Capture — 屏幕信息捕获与再利用工具（截/钉/取/录 + 本地 OCR + 离线翻译）"
 readme = "README.md"
 license = { text = "MIT" }
