@@ -158,3 +158,24 @@ def test_dimming_preserves_native_pixel_detail(qt_session):
     assert output.pixelColor(41, 40).lightness() > 100
     selector.close()
     selector.deleteLater()
+
+
+def test_deleting_one_text_then_clicking_another_keeps_correct_target(selector):
+    canvas = selector._canvas
+    selector._on_action('text')
+    for y, text in [(25, 'First'), (70, 'Second')]:
+        QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(25, y))
+        canvas.text_input.setText(text)
+        QTest.keyClick(canvas.text_input, Qt.Key.Key_Return)
+    first = canvas.text_bounds(canvas.marks[0]).center() * .5
+    second = canvas.text_bounds(canvas.marks[1]).center() * .5
+    assert canvas.edit_text_at(first)
+    canvas.text_input.clear()
+    assert canvas.edit_text_at(second)
+    assert canvas.text_input.text() == 'Second'
+    canvas.text_input.setText('Second edited')
+    canvas.commit_text()
+    assert [mark.text for mark in canvas.marks] == ['Second edited']
+    canvas.undo()
+    canvas.undo()
+    assert [mark.text for mark in canvas.marks] == ['First', 'Second']

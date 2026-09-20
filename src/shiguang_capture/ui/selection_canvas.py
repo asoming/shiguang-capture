@@ -45,11 +45,11 @@ class SelectionCanvas(ImageCanvas):
     def edit_text_at(self, position):
         if not self.rect().contains(position.toPoint()) or self.image.isNull():
             return False
+        self.commit_text()
         point = self.point_on_image(position)
         for index in range(len(self.marks)-1, -1, -1):
             mark = self.marks[index]
             if mark.tool == 'text' and self.text_bounds(mark).contains(point):
-                self.commit_text()
                 self._open_text(mark.points[0], index)
                 return True
         return False
