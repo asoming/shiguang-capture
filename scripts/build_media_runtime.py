@@ -55,6 +55,9 @@ def main():
             raise RuntimeError('Use an x64 Visual Studio developer environment before building.')
         compiler_path = unix_path(Path(compiler).parent)
         configure = ['./configure', f'--prefix={unix_path(prefix)}', '--toolchain=msvc', *FLAGS]
+        # The MOV demuxer links CBS; MSVC rejects its empty codec-type array.
+        # Include one internal CBS parser without adding an encoder or a GPL lib.
+        configure += ['--enable-bsf=mpeg2_metadata']
         def build(command):
             # MSVC link.exe must take precedence over MSYS's unrelated link tool.
             script = 'export PATH='+shlex.quote(compiler_path)+':/usr/bin:"$PATH"; '+shlex.join(command)
