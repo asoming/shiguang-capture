@@ -109,6 +109,25 @@ def test_record_panel_switch_and_save_update_library(qt_session, tmp_path):
     panel.deleteLater()
 
 
+def test_directory_refresh_does_not_destroy_an_open_file_menu(library, tmp_path):
+    (tmp_path / 'first.mp4').touch()
+    library.refresh()
+    item = library.table.topLevelItem(0)
+    (tmp_path / 'unrelated.png').touch()
+    QTest.qWait(650)
+    assert library.table.topLevelItem(0) is item
+    button = library.table.itemWidget(item, 3)
+    menu = button.menu()
+    menu.popup(button.mapToGlobal(button.rect().bottomLeft()))
+    (tmp_path / 'second.mp4').touch()
+    QTest.qWait(650)
+    assert menu.isVisible() and item.text(0) == 'first.mp4'
+    assert library.table.topLevelItemCount() == 1
+    menu.hide()
+    QTest.qWait(650)
+    assert library.table.topLevelItemCount() == 2
+
+
 def test_size_uses_readable_binary_units():
     assert file_size(0) == '0 B'
     assert file_size(1536) == '1.5 KiB'

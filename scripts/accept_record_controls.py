@@ -100,6 +100,7 @@ def main(destination):
                     if library.table.topLevelItem(index).text(0) == panel.last_path.name)
         from shiguang_capture.ui.record_library import file_size
         assert item.text(1) == file_size(panel.last_path.stat().st_size)
+        report['file_library'] = {'name': item.text(0), 'size': item.text(1), 'modified': item.text(2)}
         panel.grab().save(str(output/'recording-files.png'))
         menu = library.table.itemWidget(item, 3).menu()
         button = library.table.itemWidget(item, 3)
@@ -108,7 +109,6 @@ def main(destination):
         menu.grab().save(str(output/'recording-file-menu.png'))
         assert [action.text() for action in menu.actions() if not action.isSeparator()] == ['播放', '打开所在文件夹', '删除']
         menu.hide()
-        report['file_library'] = {'name': item.text(0), 'size': item.text(1), 'modified': item.text(2)}
         frames = []
         with av.open(str(panel.last_path)) as media:
             for frame in media.decode(video=0):

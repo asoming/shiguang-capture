@@ -28,6 +28,8 @@ class RecordingLibrary(QWidget):
         super().__init__(parent)
         self.folder: Path | None = None
         self.active_path: Path | None = None
+        self._listing_key = None
+        self._menu_open = False
         self.setStyleSheet('''
             QTreeWidget {background:white; border:0; outline:0;}
             QTreeWidget::item {height:56px; border-bottom:1px solid #EDF2F8;}
@@ -98,9 +100,8 @@ class RecordingLibrary(QWidget):
         self.refresh()
 
     def refresh(self):
-        selected = self.table.currentItem()
-        selected_path = selected.data(0, Qt.ItemDataRole.UserRole) if selected else None
-        self.table.clear()
+        if self._menu_open:
+            return  # The menu's hide signal schedules the deferred refresh.
         records = []
         error = ''
         if self.folder:
@@ -126,7 +127,16 @@ class RecordingLibrary(QWidget):
                 self.watcher.removePaths(watched)
             if desired:
                 self.watcher.addPaths(desired)
-        for path, stat in sorted(records, key=lambda record: (-record[1].st_mtime, record[0].name)):
+        records.sort(key=lambda record: (-record[1].st_mtime, record[0].name))
+        key = (self.folder, error, tuple((path, stat.st_size, stat.st_mtime_ns) for path, stat in records))
+        self.summary.setText(error or f'{len(records)} 个文件 · {file_size(sum(stat.st_size for _, stat in records))}')
+        if key == self._listing_key:
+            return  # Unrelated files should not disturb selection or menus.
+        self._listing_key = key
+        selected = self.table.currentItem()
+        selected_path = selected.data(0, Qt.ItemDataRole.UserRole) if selected else None
+        self.table.clear()
+        for path, stat in records:
             item = QTreeWidgetItem([path.name, file_size(stat.st_size),
                                     datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M'), ''])
             item.setData(0, Qt.ItemDataRole.UserRole, str(path))
@@ -143,15 +153,23 @@ class RecordingLibrary(QWidget):
                 self.table.setCurrentItem(item)
         self.content.setCurrentWidget(self.table if records else self.empty)
         self.empty.setText('无法读取文件夹' if error else '还没有录屏文件')
-        self.summary.setText(error or f'{len(records)} 个文件 · {file_size(sum(stat.st_size for _, stat in records))}')
 
     def file_menu(self, path: Path, parent):
         menu = QMenu(parent)
+        menu.aboutToShow.connect(self._menu_opened)
+        menu.aboutToHide.connect(self._menu_closed)
         menu.addAction('播放', lambda: self.open_path(path))
         menu.addAction('打开所在文件夹', lambda: self.open_path(path.parent))
         menu.addSeparator()
         menu.addAction('删除', lambda: self.delete_file(path))
         return menu
+
+    def _menu_opened(self):
+        self._menu_open = True
+
+    def _menu_closed(self):
+        self._menu_open = False
+        self.refresh_timer.start()
 
     def open_path(self, path: Path | None):
         if path is None or not path.exists():
