@@ -165,7 +165,7 @@ def record(connection, options: RecordingOptions):
             app.screenRemoved.connect(lambda removed: fail('录制屏幕已断开；可恢复已录内容。') if removed == screen else None)
 
         def tick():
-            nonlocal writer, audio, started, paused_at, paused_total, last_status, last_space_check, finished, latest
+            nonlocal writer, audio, started, paused_at, paused_total, last_status, last_space_check, finished, latest, deadline
             if finished:
                 return
             try:
@@ -196,6 +196,7 @@ def record(connection, options: RecordingOptions):
                         paused_total += now - paused_at
                         paused_at = None
                         latest = QVideoFrame()
+                        deadline = now + 15
                         if audio:
                             audio.active.set()
                         capture.start()

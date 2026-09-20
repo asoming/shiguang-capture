@@ -81,3 +81,25 @@ def test_right_click_reselect_then_escape_cancels_without_output(selector):
     assert selector._sel is None and not selector._canvas.marks
     QTest.keyClick(selector, Qt.Key.Key_Escape)
     assert cancelled and not chosen
+
+
+def test_twenty_annotation_steps_undo_redo_and_new_branch(selector):
+    selector._on_action('rect')
+    canvas = selector._canvas
+    for index in range(20):
+        start = QPoint(5 + index * 10, 20)
+        QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(canvas, start + QPoint(8, 50))
+        QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=start + QPoint(8, 50))
+    complete = selector.selected_image(selector._sel)
+    assert len(canvas.marks) == 20
+    for _ in range(20):
+        QTest.keyClick(selector, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert not canvas.marks
+    for _ in range(20):
+        QTest.keyClick(selector, Qt.Key.Key_Y, Qt.KeyboardModifier.ControlModifier)
+    assert selector.selected_image(selector._sel) == complete
+    QTest.keyClick(selector, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    redact(selector)
+    QTest.keyClick(selector, Qt.Key.Key_Y, Qt.KeyboardModifier.ControlModifier)
+    assert len(canvas.marks) == 20 and canvas.marks[-1].tool == 'redact'

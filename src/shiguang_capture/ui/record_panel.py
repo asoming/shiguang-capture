@@ -188,10 +188,11 @@ class RecordPanel(QWidget):
         self.status.setText('正在读取音源…')
 
     def toggle(self):
-        if self.state == 'recording':
-            self.connection.send('pause')
-        elif self.state == 'paused':
-            self.connection.send('resume')
+        if self.state in ('recording', 'paused'):
+            try:
+                self.connection.send('pause' if self.state == 'recording' else 'resume')
+            except (BrokenPipeError, OSError):
+                self.status.setText('录屏进程已退出，请尝试恢复录制。')
         elif self.state == 'idle':
             if self.process is not None:
                 return
@@ -224,6 +225,7 @@ class RecordPanel(QWidget):
             self.process.start()
         except Exception as exc:
             self.status.setText(f'无法启动录屏：{exc}')
+            self.connection.close()
             self.process = None
             self._set_idle()
             return
@@ -261,6 +263,7 @@ class RecordPanel(QWidget):
         self.stop_button.setEnabled(False)
         self.stop_button.setText('停止并保存')
         self.bar.hide()
+        self.open_button.setEnabled(self.last_path is not None)
         self.show()
         self.idle.emit()
 
@@ -342,6 +345,8 @@ class RecordPanel(QWidget):
         if event.get('recovery'):
             self.recovery = event['recovery']
         if kind in ('recording', 'paused'):
+            if self.state == 'saving':
+                return
             self.state = kind
             self.start_button.setEnabled(True)
             self.pause_button.setEnabled(True)
@@ -380,8 +385,15 @@ class RecordPanel(QWidget):
         self.connection, child = context.Pipe()
         target = Path(path).with_name(f'恢复_{datetime.now():%Y%m%d_%H%M%S}.mp4')
         self.process = context.Process(target=recover_worker, args=(child, path, str(target)), daemon=True)
-        self.process.start()
-        child.close()
+        try:
+            self.process.start()
+        except Exception as exc:
+            self.connection.close()
+            self.process = None
+            self.status.setText(f'无法启动恢复：{exc}')
+            return
+        finally:
+            child.close()
         self.state = 'saving'
         self.fields.setEnabled(False)
         self.start_button.setEnabled(False)

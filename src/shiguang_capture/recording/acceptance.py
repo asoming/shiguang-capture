@@ -95,7 +95,9 @@ def main(output_path=None, window_mode=False):
                     next_action = time.monotonic() + 1.2
                 elif event['type'] == 'paused':
                     window.setStyleSheet('background:#D020D0;')
-                    stage, next_action = 'paused', time.monotonic() + 1.5
+                    # Exceed the initial frame timeout: resuming after a long
+                    # pause must give the native capture source time to restart.
+                    stage, next_action = 'paused', time.monotonic() + 16
                 elif event['type'] == 'finished':
                     path = Path(event['path'])
             if path:

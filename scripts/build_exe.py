@@ -65,6 +65,8 @@ def main() -> int:
     import shutil
     from collect_licenses import collect
     bundle = exe.parent
+    from shiguang_capture import __version__
+    (bundle/'VERSION').write_text(__version__+'\n', encoding='ascii')
     # PDF decoding and the virtual keyboard are not product features. Do not ship
     # their optional Qt modules or plugins (which have separate licensing).
     for pattern in ('**/libqpdf.so', '**/libqtvirtualkeyboardplugin.so',

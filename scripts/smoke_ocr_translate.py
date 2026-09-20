@@ -195,6 +195,18 @@ def main() -> int:
     except ImportError as exc:
         print(f"真实引擎未安装（跳过）：{exc}")
 
+    ctrl.cancel_recognition()
+    for bridge in list(ctrl._recognition_bridges):
+        bridge.thread.join(timeout=2)
+    ctrl._runner.close()
+    ctrl.tray._tray.hide()
+    # Clear only this isolated offscreen test clipboard before Qt/Python teardown.
+    app.clipboard().clear()
+    from PySide6.QtCore import QEvent
+    for window in app.topLevelWidgets():
+        window.close()
+        window.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     print()
     if problems:
         print("FAILED:")

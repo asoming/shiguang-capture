@@ -39,12 +39,16 @@ jobs:
         run: python -m pytest tests/test_recording.py tests/test_inline_capture.py --junitxml=artifacts/regression.xml
       - name: Record native Linux desktop
         if: runner.os == 'Linux'
+        env:
+          XDG_SESSION_TYPE: x11
         run: xvfb-run -a -s '-screen 0 1280x800x24' python scripts/accept_desktop_recording.py artifacts/native-recording
       - name: Record native Windows or macOS desktop
         if: runner.os != 'Linux'
         run: python scripts/accept_desktop_recording.py artifacts/native-recording
       - name: Record native Linux window
         if: runner.os == 'Linux'
+        env:
+          XDG_SESSION_TYPE: x11
         run: xvfb-run -a -s '-screen 0 1280x800x24' sh -c 'openbox --sm-disable >artifacts/openbox.log 2>&1 & sleep 2; xprop -root _NET_SUPPORTING_WM_CHECK; python scripts/accept_desktop_recording.py artifacts/native-window --window'
       - name: Record native Windows or macOS window
         if: runner.os != 'Linux'
