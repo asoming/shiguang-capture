@@ -50,7 +50,7 @@ def verify_selector_coverage(app, destination):
                 samples.append({'x': x, 'y': y, 'color': pixel.name()})
                 assert max(abs(a-b) for a, b in zip(pixel.getRgb()[:3], expected.getRgb()[:3])) <= 3, samples
         # The overlay must still accept selection, text input and Escape at its
-        # native window level (especially Cocoa's popup rather than utility).
+        # native window level, without hiding on focus changes.
         QTest.mousePress(selector, Qt.MouseButton.LeftButton, pos=QPoint(40, 40))
         QTest.mouseMove(selector, QPoint(400, 250))
         QTest.mouseRelease(selector, Qt.MouseButton.LeftButton, pos=QPoint(400, 250))

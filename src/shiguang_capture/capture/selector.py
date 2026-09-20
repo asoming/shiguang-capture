@@ -83,9 +83,9 @@ class RegionSelector(QWidget):
         self._frames = capture_frames() if frames is None else frames
         bounds = union([frame.bounds for frame in self._frames])
         self._bounds = bounds
-        # Cocoa's utility panels cannot enter fullscreen. Its popup level also
-        # sits above the menu bar and Dock without switching desktop Spaces.
-        window_type = (Qt.WindowType.Popup if QGuiApplication.platformName() == 'cocoa'
+        # Cocoa utility panels cannot enter fullscreen, and popup windows close
+        # on focus changes. A borderless normal window keeps editing usable.
+        window_type = (Qt.WindowType.Window if QGuiApplication.platformName() == 'cocoa'
                        else Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | window_type)
         # A managed normal window is constrained to the work area by some WMs,
@@ -130,13 +130,14 @@ class RegionSelector(QWidget):
         self.raise_()
         self.activateWindow()
         if QGuiApplication.platformName() == 'cocoa':
-            # Cocoa can still stack system menu/status windows above a Qt
-            # popup. Set the native level after Qt has applied its own flags.
+            # Cover menu/status windows without entering a new fullscreen Space.
+            # Apply geometry again after changing the native stacking level.
             import objc
             from AppKit import NSScreenSaverWindowLevel
             view = objc.objc_object(c_void_p=int(self.winId()))
             window = view.window()
             window.setLevel_(NSScreenSaverWindowLevel)
+            self.setGeometry(bounds)
             window.orderFrontRegardless()
 
     def showEvent(self, e) -> None:  # noqa: N802
