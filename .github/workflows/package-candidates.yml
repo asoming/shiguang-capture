@@ -35,14 +35,26 @@ jobs:
           install: make nasm diffutils
       - name: Install build dependencies
         run: pip install -e ".[gui,ocr,record,dev]" pyinstaller wheel "Cython>=3.1,<4"
+      - name: Restore compiled media runtime
+        uses: actions/cache/restore@v4
+        id: media-cache
+        with:
+          path: build/media-runtime
+          key: media-${{ runner.os }}-${{ runner.arch }}-py312-${{ hashFiles('scripts/build_media_runtime.py') }}
       - name: Build media runtime on macOS
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.media-cache.outputs.cache-hit != 'true'
         run: python scripts/build_media_runtime.py
       - name: Build media runtime on Windows
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.media-cache.outputs.cache-hit != 'true'
         env:
           SHIGUANG_MSYS_BASH: ${{ steps.msys2.outputs.msys2-location }}\usr\bin\bash.exe
         run: python scripts/build_media_runtime.py
+      - name: Save compiled media runtime
+        if: steps.media-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/media-runtime
+          key: ${{ steps.media-cache.outputs.cache-primary-key }}
       - name: Install custom encoder wheel
         shell: bash
         run: pip install --force-reinstall --no-deps build/media-runtime/wheels/*.whl
