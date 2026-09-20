@@ -297,8 +297,13 @@ def record(connection, options: RecordingOptions):
             # A native GUI event loop can delay timers during window capture,
             # especially on macOS. Keep encoding cadence on its own clock while
             # all capture start/stop operations stay on the Qt main thread.
-            from .activity import configure_encoder_thread
+            from .activity import configure_encoder_thread, recording_waiter
             metrics['thread_qos_result'] = configure_encoder_thread()
+            try:
+                wait_for_frame = recording_waiter()
+            except Exception as exc:
+                fail(str(exc))
+                return
             previous = time.monotonic()
             while not finished and not stop_clock.is_set():
                 began = time.monotonic()
@@ -311,7 +316,11 @@ def record(connection, options: RecordingOptions):
                 if active_before:
                     metrics['max_tick_ms'] = max(metrics['max_tick_ms'], work_time*1000)
                 before_sleep = time.monotonic()
-                time.sleep(max(.001, 1/options.fps-work_time))
+                try:
+                    wait_for_frame(max(.001, 1/options.fps-work_time))
+                except Exception as exc:
+                    fail(str(exc))
+                    return
                 if active_before:
                     metrics['active_sleep_ms'] += (time.monotonic()-before_sleep)*1000
 
