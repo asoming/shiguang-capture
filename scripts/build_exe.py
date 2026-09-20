@@ -61,6 +61,8 @@ def main() -> int:
         args += ["--icon", str(icon)]
         for library in (media/'runtime/bin').glob('*.dll'):
             args += ['--add-binary', f'{library}:.']
+    if sys.platform == 'darwin':
+        args += ['--osx-bundle-identifier', 'io.github.asoming.shiguang-capture']
 
     print("PyInstaller args:", " ".join(args))
     PyInstaller.__main__.run(args)
@@ -101,11 +103,25 @@ def main() -> int:
     if sys.platform.startswith('linux'):
         shutil.copy2(ROOT / 'scripts/install-linux.sh', bundle / 'install-linux.sh')
     if sys.platform == 'darwin':
+        import plistlib
+        import subprocess
+        application = ROOT/'dist/ShiguangCapture.app'
+        plist_path = application/'Contents/Info.plist'
+        with plist_path.open('rb') as source:
+            info = plistlib.load(source)
+        info['CFBundleDisplayName'] = '拾光 Capture'
+        info['NSMicrophoneUsageDescription'] = '仅在你选择麦克风录屏时采集声音，并保存到你选择的本地视频文件。'
+        with plist_path.open('wb') as destination:
+            plistlib.dump(info, destination)
         resources = ROOT/'dist/ShiguangCapture.app/Contents/Resources'
         for directory in ('licenses', 'validation'):
             shutil.copytree(bundle/directory, resources/directory, dirs_exist_ok=True)
         for name in ('LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md', 'VERSION'):
             shutil.copy2(bundle/name, resources/name)
+        # Adding notices/metadata changes the bundle seal. Re-sign the finished
+        # preview locally; this is ad-hoc signing, not Developer ID/notarization.
+        subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(application)], check=True)
+        subprocess.run(['codesign', '--verify', '--deep', '--strict', str(application)], check=True)
     print("OK ->", exe)
     return 0
 

@@ -58,10 +58,19 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force 'artifacts/package-tests' | Out-Null
           foreach ($argument in @('--self-test','--recording-self-test')) {
-            $process = Start-Process -FilePath 'dist/ShiguangCapture/ShiguangCapture.exe' -ArgumentList $argument -Wait -PassThru
+            $env:SHIGUANG_SELF_TEST_LOG = Join-Path $PWD ('artifacts/package-tests/' + $argument.TrimStart('-') + '.log')
+            $process = Start-Process -FilePath 'dist/ShiguangCapture/ShiguangCapture.exe' -ArgumentList $argument -PassThru
+            if (-not $process.WaitForExit(180000)) {
+              $process.Kill($true)
+              Get-Content $env:SHIGUANG_SELF_TEST_LOG -ErrorAction SilentlyContinue
+              throw "Standalone test timed out: $argument"
+            }
+            Get-Content $env:SHIGUANG_SELF_TEST_LOG -ErrorAction SilentlyContinue
             if ($process.ExitCode -ne 0) { throw "Standalone test failed: $argument ($($process.ExitCode))" }
           }
+          Compress-Archive -Path 'dist/ShiguangCapture' -DestinationPath 'dist/ShiguangCapture-Windows-x86_64-preview.zip'
       - name: Test standalone macOS application
         if: runner.os == 'macOS'
         run: |
@@ -74,14 +83,8 @@ jobs:
           name: package-candidate-${{ matrix.os }}
           path: |
             dist/ShiguangCapture-macOS-arm64-preview.tar.gz
-            dist/ShiguangCapture/ShiguangCapture.exe
-            dist/ShiguangCapture/_internal/
-            dist/ShiguangCapture/licenses/
-            dist/ShiguangCapture/validation/
-            dist/ShiguangCapture/README.md
-            dist/ShiguangCapture/LICENSE
-            dist/ShiguangCapture/VERSION
-            dist/ShiguangCapture/THIRD_PARTY_NOTICES.md
+            dist/ShiguangCapture-Windows-x86_64-preview.zip
+            artifacts/package-tests/
           retention-days: 14
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -90,3 +93,4 @@ jobs:
           path: |
             build/media-runtime/ffmpeg-8.0.1/ffbuild/config.log
             build/pyinstaller/ShiguangCapture/warn-ShiguangCapture.txt
+            artifacts/package-tests/
