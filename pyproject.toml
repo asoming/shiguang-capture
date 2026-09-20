@@ -36,7 +36,11 @@ ocr = [
     "opencv-python-headless>=4.8",  # OCR runs in its own process, separate from Qt
     "PyYAML>=6.0",                  # rapidocr 的隐式依赖（--no-deps 分批安装时发现）
 ]
-offline = ["ctranslate2==4.6.0", "sentencepiece==0.2.1"]
+offline = [
+    "ctranslate2==4.6.0",
+    "sentencepiece==0.2.1",
+    "setuptools==80.9.0; sys_platform == 'win32'", # CTranslate2 4.6 Windows DLL loader uses pkg_resources.
+]
 translate = [
     "argostranslate>=1.9,<2",       # 离线神经翻译（CTranslate2 + SentencePiece）
     "ctranslate2>=4.0",

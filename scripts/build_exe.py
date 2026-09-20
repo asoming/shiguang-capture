@@ -86,6 +86,7 @@ def main() -> int:
             raise RuntimeError('打包需要 libxcb-cursor0；安装系统库或通过 SHIGUANG_XCB_CURSOR 指定库文件。')
         args += ['--add-binary', f'{cursor_lib}:.']
     if sys.platform == "win32":
+        args += ["--hidden-import", "pkg_resources"]
         if icon.is_file():
             args += ["--icon", str(icon)]
         for library in (media/'runtime/bin').glob('*.dll'):
