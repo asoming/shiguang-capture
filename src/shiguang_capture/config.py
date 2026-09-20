@@ -45,7 +45,7 @@ class AppConfig:
     copy_to_clipboard: bool = True     # 截图后自动写剪贴板
     play_shutter_sound: bool = False
     pin_default_opacity: float = 1.0   # 贴图默认透明度（FR-1.23）
-    picker_format: str = "hex"         # hex / rgb / hsv（FR 取色格式）
+    picker_format: str = "hex"         # hex / rgb / hsv / hsl / rgba
     ocr_engine: str = "local"          # local / cloud（本地优先，FR 隐私红线）
     target_lang: str = "auto"          # 翻译目标语言：auto / zh / en
     allow_cloud_translate: bool = False  # 云端翻译总开关（默认关，隐私红线 NFR-6）
@@ -85,6 +85,8 @@ class AppConfig:
         if cfg.ocr_engine != "local":
             cfg.ocr_engine = "local"
         cfg.allow_cloud_translate = False
+        if cfg.picker_format not in {'hex', 'rgb', 'hsv', 'hsl', 'rgba'}:
+            cfg.picker_format = 'hex'
         choices = {'ocr': {'text', 'json'}, 'code': {'text', 'code', 'json'},
                    'table': {'text', 'markdown', 'table', 'json'}, 'translate': {'text', 'json'}}
         cfg.output_formats = {mode: value for mode, value in cfg.output_formats.items()

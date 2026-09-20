@@ -106,10 +106,13 @@ def record(connection, options: RecordingOptions):
     import av  # Load the encoder before starting the capture clock.
     import numpy as np
     from .encoder import VideoWriter, check_space
+    from .activity import RecordingActivity
 
     app = QGuiApplication([])
     screen = next((s for s in app.screens() if s.name() == options.screen), None)
     writer = audio = None
+    activity = RecordingActivity()
+    metrics = {'frames': 0, 'image_conversion_ms': 0.0, 'encoding_ms': 0.0}
     finished = False
     try:
         if screen is None and not options.window_title:
@@ -183,12 +186,13 @@ def record(connection, options: RecordingOptions):
                         if writer is None:
                             connection.send({'type': 'cancelled'})
                         else:
-                            connection.send({'type': 'finished', 'path': str(writer.finish())})
+                            connection.send({'type': 'finished', 'path': str(writer.finish()), 'metrics': metrics})
                         app.quit()
                         return
                     if command == 'pause' and started is not None and paused_at is None:
                         paused_at = now
                         capture.stop()
+                        activity.stop()
                         if audio:
                             audio.pause()
                         connection.send({'type': 'paused'})
@@ -197,6 +201,7 @@ def record(connection, options: RecordingOptions):
                         paused_at = None
                         latest = QVideoFrame()
                         deadline = now + 15
+                        activity.start()
                         if audio:
                             audio.active.set()
                         capture.start()
@@ -207,6 +212,7 @@ def record(connection, options: RecordingOptions):
                     if now > deadline:
                         raise RuntimeError('未收到屏幕画面。请检查系统屏幕录制权限后重试。')
                     return
+                conversion_start = time.perf_counter()
                 full_image = latest.toImage()
                 if full_image.isNull():
                     raise RuntimeError('无法读取屏幕帧。请检查系统屏幕录制权限。')
@@ -220,6 +226,7 @@ def record(connection, options: RecordingOptions):
                                         round((region.y()-geometry.y())*scale_y),
                                         round(region.width()*scale_x), round(region.height()*scale_y))
                 image = image.convertToFormat(QImage.Format.Format_RGB888)
+                metrics['image_conversion_ms'] += (time.perf_counter()-conversion_start)*1000
                 if writer is None:
                     writer = VideoWriter(Path(options.target), image.width(), image.height(), options.fps, bool(device_ids))
                     audio = AudioCapture(device_ids) if device_ids else None
@@ -230,7 +237,10 @@ def record(connection, options: RecordingOptions):
                 elapsed = now - started - paused_total
                 array = np.frombuffer(image.constBits(), dtype=np.uint8).reshape(image.height(), image.bytesPerLine())
                 if round(elapsed * options.fps) > writer.video_pts:
+                    encoding_start = time.perf_counter()
                     writer.write_video(array[:, :image.width()*3].reshape(image.height(), image.width(), 3), elapsed)
+                    metrics['encoding_ms'] += (time.perf_counter()-encoding_start)*1000
+                    metrics['frames'] += 1
                 if audio:
                     for chunk in audio.take():
                         writer.write_audio(chunk)
@@ -250,11 +260,13 @@ def record(connection, options: RecordingOptions):
         timer.setInterval(max(1, round(1000/options.fps)))
         timer.timeout.connect(tick)
         timer.start()
+        activity.start()
         capture.start()
         app.exec()
     except Exception as exc:
         connection.send({'type': 'error', 'message': str(exc), 'recovery': str(writer.recovery) if writer else None})
     finally:
+        activity.stop()
         if audio:
             audio.close()
         if writer:

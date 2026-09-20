@@ -44,4 +44,9 @@ def format_color(r: int, g: int, b: int, fmt: str = "hex") -> str:
     if fmt == "hsv":
         h, s, v = rgb_to_hsv(r, g, b)
         return f"hsv({h}, {s}%, {v}%)"
+    if fmt == 'hsl':
+        h, lightness, saturation = colorsys.rgb_to_hls(clamp8(r)/255, clamp8(g)/255, clamp8(b)/255)
+        return f'hsl({round(h*360)}, {round(saturation*100)}%, {round(lightness*100)}%)'
+    if fmt == 'rgba':
+        return f'rgba({clamp8(r)}, {clamp8(g)}, {clamp8(b)}, 1)'
     raise ValueError(f"不支持的色值格式: {fmt!r}")

@@ -60,3 +60,12 @@ class TestFormatColor:
     def test_unknown_format(self):
         with pytest.raises(ValueError):
             format_color(0, 0, 0, "cmyk")
+
+    @pytest.mark.parametrize('rgb,expected', [((255,0,0), 'hsl(0, 100%, 50%)'),
+        ((0,255,0), 'hsl(120, 100%, 50%)'), ((255,255,255), 'hsl(0, 0%, 100%)'),
+        ((0,0,0), 'hsl(0, 0%, 0%)'), ((128,128,128), 'hsl(0, 0%, 50%)')])
+    def test_hsl(self, rgb, expected):
+        assert format_color(*rgb, 'hsl') == expected
+
+    def test_rgba_alpha_is_explicit_output_value(self):
+        assert format_color(300,-5,128,'rgba') == 'rgba(255, 0, 128, 1)'

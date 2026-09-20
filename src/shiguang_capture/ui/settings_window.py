@@ -144,7 +144,7 @@ class SettingsWindow(QDialog):
         form.addRow("贴图默认透明度", row)
 
         self.picker_combo = QComboBox()
-        self.picker_combo.addItems(["hex", "rgb", "hsv"])
+        self.picker_combo.addItems(["hex", "rgb", "hsv", "hsl", "rgba"])
         self.picker_combo.setCurrentText(self._config.picker_format)
         form.addRow("取色复制格式", self.picker_combo)
         return w

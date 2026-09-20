@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 authors = [{ name = "asoming" }]
 keywords = ["screenshot", "ocr", "screen-capture", "pin", "color-picker"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Environment :: X11 Applications :: Qt",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
@@ -45,11 +45,12 @@ translate = [
 dev = [
     "pytest>=8.2,<9",
 ]
-record = ["av==16.1.0", "SoundCard==0.4.5"]
+record = ["av==16.1.0", "SoundCard==0.4.5", "pyobjc-framework-Cocoa>=10; sys_platform == 'darwin'"]
 all = [
     "PySide6>=6.8,<7",
     "av==16.1.0",
     "SoundCard==0.4.5",
+    "pyobjc-framework-Cocoa>=10; sys_platform == 'darwin'",
     "pynput>=1.7,<2",
     "rapidocr-onnxruntime==1.4.4",
     "onnxruntime==1.23.2",         # verified runtime; newer releases require revalidation

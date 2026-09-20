@@ -85,6 +85,7 @@ class AppController:
         self._quit_after_recording = False
         self._pins = []
         self._pins_hidden = False
+        self._color_history = []
         self._closing = False
         self._update_running = False
         self.tray = TrayIcon()
@@ -122,6 +123,8 @@ class AppController:
         self._display_changed()
 
     def _display_changed(self, *_):
+        if self._picker is not None:
+            self._picker.close()
         if self._selector is not None:
             self._selector.close()
             self.tray.notify('拾光 Capture', '显示设置已变化，请重新选择区域。')
@@ -543,11 +546,16 @@ class AppController:
         if self._picker:
             self._picker.close()
         try:
-            self._picker = ColorPickerOverlay(self.config.picker_format)
+            self._picker = ColorPickerOverlay(self.config.picker_format, history=self._color_history)
             self._picker.color_picked.connect(self._on_color)
+            self._picker.sampled.connect(self._remember_color)
             self._picker.show()
         except (ValueError, RuntimeError) as exc:
             self._error(str(exc))
+
+    def _remember_color(self, r, g, b):
+        color = (r, g, b)
+        self._color_history = [color, *(item for item in self._color_history if item != color)][:20]
 
     def _on_color(self, value):
         try:
