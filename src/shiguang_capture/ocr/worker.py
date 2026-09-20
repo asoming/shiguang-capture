@@ -14,15 +14,23 @@ def _serve(connection):
         while connection.poll(300):  # Release model memory after five idle minutes.
             image, mode, config = connection.recv()
             try:
+                if mode == 'translate_text':
+                    from .base import OCRResult
+                    from ..translate import translate_text
+                    result = OCRResult(image, None)
+                    translation = translate_text(image, config, allow_cloud=False)
+                    connection.send(('ok', (result, translation)))
+                    continue
                 started = time.perf_counter()
                 if backend is None:
                     backend = create_backend(config.ocr_engine)
                 assert_privacy_guard(backend, False)
                 from ..structured import code_from_blocks, detect_grid, table_from_blocks
                 boxes = None
-                if mode == 'table':
+                specialized = getattr(backend, 'recognize_'+mode, None) if mode in {'table', 'code'} else None
+                if mode == 'table' and specialized is None:
                     boxes, image = detect_grid(image)
-                result = backend.recognize(image)
+                result = specialized(image) if specialized else backend.recognize(image)
                 result.mode = mode
                 if mode == 'code':
                     result.text = code_from_blocks(result.blocks)

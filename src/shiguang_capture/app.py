@@ -17,6 +17,7 @@ from .capture.grabber import grab_fullscreen, grab_region
 from .capture.scroller import ScrollCaptureSession
 from .capture.selector import RegionSelector
 from .config import AppConfig
+from .clipboard import write_text, write_image
 from .hotkeys import HotkeyManager
 from .images import load_image, save_image, validate_size
 from .naming import next_seq, shot_name
@@ -80,20 +81,27 @@ class AppController:
         self._last_image = None
         self._selector = self._picker = self._settings = None
         self._scroll_session = self._scroll_preview = None
+        self._record_panel = None
+        self._launcher = None
+        self._editors = []
+        self._quit_after_recording = False
         self._pins = []
         self._pins_hidden = False
+        self._color_history = []
         self._closing = False
         self._update_running = False
         self.tray = TrayIcon()
         for signal, callback in [
             (self.tray.action_capture, self.start_region_capture),
+            (self.tray.action_record, self.open_recording),
             (self.tray.action_scroll, self.start_scroll_capture),
             (self.tray.action_pick, self.start_color_pick),
             (self.tray.action_ocr, self.ocr_recognize),
             (self.tray.action_hide_pins, self.toggle_pins),
+            (self.tray.action_restore_pins, self.restore_pins),
             (self.tray.action_settings, self.open_settings),
             (self.tray.action_open, self.open_image),
-            (self.tray.action_workspace, self.open_workspace),
+            (self.tray.action_workspace, self.open_launcher),
             (self.tray.action_quit, self.shutdown),
         ]:
             signal.connect(callback)
@@ -118,6 +126,8 @@ class AppController:
         self._display_changed()
 
     def _display_changed(self, *_):
+        if self._picker is not None:
+            self._picker.close()
         if self._selector is not None:
             self._selector.close()
             self.tray.notify('拾光 Capture', '显示设置已变化，请重新选择区域。')
@@ -143,13 +153,39 @@ class AppController:
         actions = {'capture_region': self.start_region_capture, 'capture_fullscreen': self.capture_fullscreen,
                    'capture_scroll': self.start_scroll_capture, 'pin_last': self.pin_from_clipboard,
                    'color_picker': self.start_color_pick, 'hide_all_pins': self.toggle_pins,
-                   'ocr_recognize': self.ocr_recognize}
+                   'restore_all_pins': self.restore_pins,
+                   'ocr_recognize': self.ocr_recognize,
+                   'record_toggle': self.toggle_recording, 'record_stop': self.stop_recording}
         actions.get(action, lambda: None)()
+
+    def open_launcher(self):
+        if self._launcher is None:
+            from .ui.launcher import Launcher
+            self._launcher = Launcher()
+            self._launcher.capture.connect(self.start_region_capture)
+            self._launcher.record.connect(self.open_recording)
+            self._launcher.recognize.connect(self.ocr_recognize)
+            self._launcher.settings.connect(self.open_settings)
+        self._launcher.show()
+        self._launcher.raise_()
+
+    def edit_image(self, image):
+        from .ui.launcher import ImageEditor
+        editor = ImageEditor(image)
+        editor.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        editor.save.connect(self.save_as)
+        editor.recognize.connect(self._begin_recognition)
+        editor.destroyed.connect(lambda: self._editors.remove(editor) if editor in self._editors else None)
+        self._editors.append(editor)
+        editor.show()
 
     def open_workspace(self):
         if self._panel is None:
-            panel = ResultPanel(delegate=self._recognize_panel)
+            panel = ResultPanel(delegate=self._recognize_panel, formats=self.config.output_formats)
+            panel.translate_requested.connect(lambda text: self._recognize_panel(panel.canvas.image, 'translate_text', text))
+            panel.format_changed.connect(self._remember_output_format)
             panel.capture_requested.connect(self.start_region_capture)
+            panel.record_requested.connect(self.open_recording)
             panel.open_requested.connect(self.open_image)
             panel.paste_requested.connect(self.paste_image)
             panel.file_dropped.connect(self.open_image)
@@ -162,6 +198,71 @@ class AppController:
         self._panel.raise_()
         self._panel.activateWindow()
         return self._panel
+
+    def _remember_output_format(self, mode, output):
+        self.config.output_formats[mode] = output
+        try:
+            self.config.save()
+        except OSError:
+            self._panel.gloss.setText('格式已在本次会话记住；配置目录暂不可写。')
+
+    def open_recording(self):
+        if self._launcher:
+            self._launcher.hide()
+        if self._record_panel is None:
+            from .ui.record_panel import RecordPanel
+            self._record_panel = RecordPanel()
+            self._record_panel.choose_region.connect(self._choose_record_region)
+            self._record_panel.idle.connect(self._recording_idle)
+        self._record_panel.show()
+        self._record_panel.raise_()
+        self._record_panel.activateWindow()
+
+    def toggle_recording(self):
+        if self._record_panel and self._record_panel.active:
+            self._record_panel.toggle()
+        else:
+            self.open_recording()
+
+    def stop_recording(self):
+        if self._record_panel:
+            self._record_panel.stop()
+
+    def _recording_idle(self):
+        if self._quit_after_recording:
+            self._quit_after_recording = False
+            self.shutdown()
+
+    def _choose_record_region(self):
+        if self._selector:
+            self._selector.close()
+        self._record_panel.hide()
+        if self._panel:
+            self._panel.hide()
+        QTimer.singleShot(150, self._show_record_selector)
+
+    def _show_record_selector(self):
+        if self._closing:
+            return
+        try:
+            self._selector = RegionSelector(selection_only=True)
+            self._selector.action_chosen.connect(self._record_region_chosen)
+            self._selector.cancelled.connect(self._record_selection_cancelled)
+            self._selector.show()
+            self._selector.activateWindow()
+        except (RuntimeError, ValueError) as exc:
+            self._record_panel.status.setText(str(exc))
+            self._record_panel.show()
+
+    def _record_selection_cancelled(self):
+        self._clear_selector()
+        self._record_panel.show()
+
+    def _record_region_chosen(self, rect, action):
+        self._clear_selector()
+        if action == 'copy':
+            self._record_panel.set_region(rect)
+        self._record_panel.show()
 
     def _image_changed(self):
         self.cancel_recognition()
@@ -177,7 +278,7 @@ class AppController:
         except (ValueError, OSError) as exc:
             self._error(str(exc))
             return
-        self.open_workspace().set_image(image)
+        self.edit_image(image)
 
     def paste_image(self):
         image = QGuiApplication.clipboard().image()
@@ -186,7 +287,7 @@ class AppController:
         except ValueError as exc:
             self._error(str(exc))
             return
-        self.open_workspace().set_image(image)
+        self.edit_image(image)
 
     def start_region_capture(self):
         self._start_selector(False)
@@ -195,6 +296,9 @@ class AppController:
         self._start_selector(True)
 
     def _start_selector(self, scroll):
+        if self._launcher:
+            self._launcher.hide()
+        self.cancel_recognition()
         if self._scroll_session and self._scroll_session.is_running:
             self._error('请先完成或停止当前长截图。')
             return
@@ -239,16 +343,16 @@ class AppController:
             image = selector.selected_image(rect) if selector is not None else grab_region(rect)
             self._last_image = image
             if action == 'copy':
-                QGuiApplication.clipboard().setImage(image)
-                self.tray.notify('拾光 Capture', '图片已复制，未保存到磁盘。')
+                write_image(image)
+                self.tray.notify('拾光 Capture', '已复制')
             elif action == 'save':
                 self.save_as(image)
             elif action == 'pin':
                 self.pin_image(image)
-            elif action in ('ocr', 'translate'):
+            elif action in ('ocr', 'translate', 'code', 'table'):
                 self._begin_recognition(image, action)
             elif action == 'edit':
-                self.open_workspace().set_image(image)
+                self.edit_image(image)
         except (ValueError, RuntimeError, OSError) as exc:
             self._error(str(exc))
         finally:
@@ -261,7 +365,7 @@ class AppController:
         try:
             image = grab_fullscreen()
             self._last_image = image
-            QGuiApplication.clipboard().setImage(image)
+            write_image(image)
             self.tray.notify('拾光 Capture', '当前屏幕已复制，未保存到磁盘。')
         except (ValueError, RuntimeError) as exc:
             self._error(str(exc))
@@ -319,8 +423,8 @@ class AppController:
         preview.close()
         if self._closing:
             return
-        self.open_workspace().set_image(image)
-        self._panel.gloss.setText('长图已保留在工作台。检查拼接后，可手动复制或保存。')
+        self.edit_image(image)
+
 
     def _on_scroll_failed(self, message, preview):
         self._error(message)
@@ -344,8 +448,8 @@ class AppController:
         if image.isNull():
             image = self._last_image
         if image is None or image.isNull():
-            self.open_workspace()
-            self._error('请先打开、粘贴或截取一张图片。')
+            self.open_image()
+            self._error('打开图片后，点击识别文字。')
             return
         self._begin_recognition(image, 'ocr')
 
@@ -371,15 +475,18 @@ class AppController:
         panel.set_image(image)
         self._recognize_panel(image, mode)
 
-    def _recognize_panel(self, image, mode):
+    def _recognize_panel(self, image, mode, text=None):
         self.cancel_recognition()
         panel = self.open_workspace()
         try:
-            png = self._image_to_png_bytes(image)
+            png = self._image_to_png_bytes(image) if text is None else text
         except ValueError as exc:
             self._error(str(exc))
             return
         task_id = self._task_id
+        translation_source = deepcopy(panel._result) if text is not None else None
+        if translation_source is not None:
+            translation_source.text = text
         config = deepcopy(self.config)
         backend_override = self._ocr_override
         panel.set_busy(True)
@@ -389,21 +496,24 @@ class AppController:
             result, translation = payload
             panel.set_busy(False)
             if translation is not None:
-                panel.show_translation(result, translation)
+                if text is not None and panel.source_edit.toPlainText() != text:
+                    panel.show_error("原文已修改，请再次点击翻译。")
+                    return
+                panel.show_translation(translation_source or result, translation)
             else:
                 panel.show_result(mode, result)
             if not result.text.strip():
-                panel.gloss.setText('未识别到文字。请使用更清晰的图片重试。')
+                panel.show_error('未识别到文字。请使用更清晰的图片重试。')
         def on_error(message):
             if not self._closing and task_id == self._task_id:
                 panel.set_busy(False)
-                panel.gloss.setText(message)
+                panel.show_error(message)
         bridge = _RecognitionBridge(on_ok, on_error, self._finish_recognition)
         self._recognition_bridges.append(bridge)
         self._active_task = bridge
         def worker():
             try:
-                if backend_override is None:
+                if backend_override is None or text is not None:
                     payload = self._runner.run(png, mode, config, bridge.cancel)
                 else:
                     assert_privacy_guard(backend_override, False)
@@ -445,7 +555,9 @@ class AppController:
         if len(self._pins) >= 20:
             self._error('已有 20 张贴图，请先关闭一些贴图。')
             return
-        pin = PinWindow(image, self.config.pin_default_opacity)
+        pin = PinWindow(image, self.config.pin_default_opacity, self.config.hotkeys.restore_all_pins)
+        pin.recognize_requested.connect(self._run_ocr_action)
+        pin.edit_requested.connect(self.edit_image)
         pin.closed.connect(lambda item: self._pins.remove(item) if item in self._pins else None)
         self._pins.append(pin)
         self._pins_hidden = False
@@ -467,20 +579,36 @@ class AppController:
         for pin in self._pins:
             pin.setVisible(not self._pins_hidden)
 
+    def restore_pins(self):
+        self._pins_hidden = False
+        screens = self.app.screens()
+        for pin in self._pins:
+            pin.restore()
+            if screens and not any(s.availableGeometry().intersects(pin.frameGeometry()) for s in screens):
+                pin.move(screens[0].availableGeometry().topLeft())
+
     def start_color_pick(self):
         from .ui.picker import ColorPickerOverlay
         if self._picker:
             self._picker.close()
         try:
-            self._picker = ColorPickerOverlay(self.config.picker_format)
+            self._picker = ColorPickerOverlay(self.config.picker_format, history=self._color_history)
             self._picker.color_picked.connect(self._on_color)
+            self._picker.sampled.connect(self._remember_color)
             self._picker.show()
         except (ValueError, RuntimeError) as exc:
             self._error(str(exc))
 
+    def _remember_color(self, r, g, b):
+        color = (r, g, b)
+        self._color_history = [color, *(item for item in self._color_history if item != color)][:20]
+
     def _on_color(self, value):
-        QGuiApplication.clipboard().setText(value)
-        self.tray.notify('拾光 Capture', f'已复制色值 {value}')
+        try:
+            write_text(value)
+            self.tray.notify('拾光 Capture', f'已复制色值 {value}')
+        except RuntimeError as exc:
+            self._error(str(exc))
 
     def open_settings(self):
         if self._settings is not None:
@@ -542,6 +670,10 @@ class AppController:
             self._settings.status.setText(message)
 
     def shutdown(self):
+        if self._record_panel and self._record_panel.active:
+            self._quit_after_recording = True
+            self._record_panel.stop()
+            return
         self._closing = True
         self.cancel_recognition()
         if self._scroll_session:
@@ -562,5 +694,5 @@ def main(argv=None):
     app.setApplicationName('shiguang-capture')
     app.setQuitOnLastWindowClosed(False)
     controller = AppController(app)
-    controller.open_workspace()
+    controller.open_launcher()
     return app.exec()

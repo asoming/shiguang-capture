@@ -3,7 +3,10 @@
 set -euo pipefail
 package_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 app_root="${XDG_DATA_HOME:-$HOME/.local/share}/shiguang-capture"
-app_version="1.3.0"
+app_version="$(cat "$package_dir/VERSION")"
+if [[ ! "$app_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]; then
+  echo '安装包版本号无效。' >&2; exit 1
+fi
 app_target="$app_root/$app_version"
 if [ ! -x "$package_dir/ShiguangCapture" ]; then
   echo '请在解压后的 ShiguangCapture 目录中运行此脚本。' >&2; exit 1
@@ -28,7 +31,7 @@ cat > "$desktop_file" <<EOF
 [Desktop Entry]
 Type=Application
 Name=拾光 Capture
-Comment=本地截图、标注与文字校对
+Comment=本地截图、录屏、标注与文字校对
 Exec="$desktop_exec"
 Icon=$app_root/current/icon.png
 Terminal=false

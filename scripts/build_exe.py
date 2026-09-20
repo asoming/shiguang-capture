@@ -18,13 +18,43 @@ except ImportError:
     pass
 
 
+def remove_unused_qt_modules(packages):
+    """Remove unused plugins, frameworks and their macOS cross-link aliases."""
+    import shutil
+    patterns = (
+        '**/libqpdf.so', '**/libqpdf.dylib', '**/qpdf.dll',
+        '**/libqtvirtualkeyboardplugin.so', '**/libqtvirtualkeyboardplugin.dylib',
+        '**/qtvirtualkeyboardplugin.dll', '**/libQt6Pdf.so*', '**/Qt6Pdf*.dll',
+        '**/QtPdf.framework', '**/QtPdfWidgets.framework', '**/QtPdf', '**/QtPdfWidgets',
+        '**/libQt6VirtualKeyboard*.so*', '**/Qt6VirtualKeyboard*.dll',
+        '**/QtVirtualKeyboard.framework', '**/QtVirtualKeyboardQml.framework',
+        '**/QtVirtualKeyboard', '**/QtVirtualKeyboardQml',
+    )
+    for package in packages:
+        for pattern in patterns:
+            for unused in package.glob(pattern):
+                if unused.is_symlink() or not unused.is_dir():
+                    unused.unlink()
+                else:
+                    shutil.rmtree(unused)
+
+
 def main() -> int:
+    import os
+    media = Path(os.environ.get('SHIGUANG_MEDIA_BUILD', ROOT/'build/media-runtime'))
+    dll_directory = None
+    if sys.platform == 'win32':
+        dll_directory = os.add_dll_directory(str(media/'runtime/bin'))
+        os.environ['PATH'] = str(media/'runtime/bin')+os.pathsep+os.environ['PATH']
     try:
         import PyInstaller.__main__
     except ImportError:
         print("需要 pyinstaller：pip install pyinstaller")
         return 1
 
+    from shiguang_capture.offline_translation import available
+    if not available():
+        raise RuntimeError('先运行 scripts/build_translation_models.py，正式包必须包含离线翻译模型。')
     icon = ROOT / "docs/assets/icon.ico"
     args = [
         str(ROOT / "scripts/app_entry.py"),
@@ -38,6 +68,12 @@ def main() -> int:
         "--collect-all", "onnxruntime",
         "--collect-all", "cv2",
         "--collect-data", "shiguang_capture",
+        "--collect-all", "av",
+        "--collect-all", "soundcard",
+        "--collect-all", "ctranslate2",
+        "--collect-all", "sentencepiece",
+        "--exclude-module", "torch",
+        "--exclude-module", "transformers",
         "--workpath", str(ROOT / "build/pyinstaller"),
         "--specpath", str(ROOT / "build"),
         "--distpath", str(ROOT / "dist"),
@@ -49,8 +85,25 @@ def main() -> int:
         if not cursor_lib.is_file():
             raise RuntimeError('打包需要 libxcb-cursor0；安装系统库或通过 SHIGUANG_XCB_CURSOR 指定库文件。')
         args += ['--add-binary', f'{cursor_lib}:.']
-    if icon.is_file() and sys.platform == "win32":
-        args += ["--icon", str(icon)]
+    if sys.platform == "win32":
+        args += ["--hidden-import", "pkg_resources"]
+        if icon.is_file():
+            args += ["--icon", str(icon)]
+        for library in (media/'runtime/bin').glob('*.dll'):
+            args += ['--add-binary', f'{library}:.']
+        # PyInstaller's isolated module collector does not inherit the parent's
+        # os.add_dll_directory handles. Explicitly collect Cython extensions so
+        # an unimportable submodule cannot fall back to PyAV's .py source data.
+        from importlib.metadata import distribution
+        av_root = Path(distribution('av').locate_file('av'))
+        extensions = list(av_root.rglob('*.pyd'))
+        if not extensions:
+            raise RuntimeError('PyAV 编译模块缺失，请先安装自建 wheel。')
+        for extension in extensions:
+            destination = Path('av')/extension.parent.relative_to(av_root)
+            args += ['--add-binary', f'{extension}:{destination.as_posix()}']
+    if sys.platform == 'darwin':
+        args += ['--osx-bundle-identifier', 'io.github.asoming.shiguang-capture']
 
     print("PyInstaller args:", " ".join(args))
     PyInstaller.__main__.run(args)
@@ -63,21 +116,55 @@ def main() -> int:
     import shutil
     from collect_licenses import collect
     bundle = exe.parent
+    from shiguang_capture import __version__
+    (bundle/'VERSION').write_text(__version__+'\n', encoding='ascii')
     # PDF decoding and the virtual keyboard are not product features. Do not ship
     # their optional Qt modules or plugins (which have separate licensing).
-    for pattern in ('**/libqpdf.so', '**/libqtvirtualkeyboardplugin.so',
-                    '**/libQt6Pdf.so*', '**/libQt6VirtualKeyboard*.so*'):
-        for unused in bundle.glob(pattern):
-            unused.unlink()
+    package_roots = [bundle]
+    if sys.platform == 'darwin':
+        package_roots.append(ROOT/'dist/ShiguangCapture.app/Contents')
+    remove_unused_qt_modules(package_roots)
     collect(bundle / 'licenses/dependencies')
+    import os
+    media = Path(os.environ.get('SHIGUANG_MEDIA_BUILD', ROOT/'build/media-runtime'))
+    if not (media/'ffmpeg-8.0.1.tar.xz').is_file() or not (media/'build-info.json').is_file():
+        raise RuntimeError('先运行 scripts/build_media_runtime.py，并通过 SHIGUANG_MEDIA_BUILD 指定构建目录。')
+    media_notices = bundle/'licenses/recording-runtime'
+    media_notices.mkdir(parents=True, exist_ok=True)
+    for source in (media/'ffmpeg-8.0.1.tar.xz', media/'build-info.json',
+                   media/'ffmpeg-8.0.1/COPYING.LGPLv2.1', media/'ffmpeg-8.0.1/LICENSE.md'):
+        shutil.copy2(source, media_notices/source.name)
+    shutil.copy2(ROOT/'scripts/build_media_runtime.py', media_notices/'build_media_runtime.py')
     shutil.copytree(ROOT / 'licenses', bundle / 'licenses', dirs_exist_ok=True)
     shutil.copytree(ROOT / 'validation', bundle / 'validation', dirs_exist_ok=True)
     shutil.copy2(ROOT / 'requirements-linux.lock', bundle / 'requirements-linux.lock')
     for name in ('LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md'):
         shutil.copy2(ROOT / name, bundle / name)
     shutil.copy2(ROOT / 'docs/assets/icon-256.png', bundle / 'icon.png')
+    if sys.platform == 'win32':
+        shutil.copy2(ROOT/'scripts/install-windows.ps1', bundle/'install-windows.ps1')
     if sys.platform.startswith('linux'):
         shutil.copy2(ROOT / 'scripts/install-linux.sh', bundle / 'install-linux.sh')
+    if sys.platform == 'darwin':
+        import plistlib
+        import subprocess
+        application = ROOT/'dist/ShiguangCapture.app'
+        plist_path = application/'Contents/Info.plist'
+        with plist_path.open('rb') as source:
+            info = plistlib.load(source)
+        info['CFBundleDisplayName'] = '拾光 Capture'
+        info['NSMicrophoneUsageDescription'] = '仅在你选择麦克风录屏时采集声音，并保存到你选择的本地视频文件。'
+        with plist_path.open('wb') as destination:
+            plistlib.dump(info, destination)
+        resources = ROOT/'dist/ShiguangCapture.app/Contents/Resources'
+        for directory in ('licenses', 'validation'):
+            shutil.copytree(bundle/directory, resources/directory, dirs_exist_ok=True)
+        for name in ('LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md', 'VERSION'):
+            shutil.copy2(bundle/name, resources/name)
+        # Adding notices/metadata changes the bundle seal. Re-sign the finished
+        # preview locally; this is ad-hoc signing, not Developer ID/notarization.
+        subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(application)], check=True)
+        subprocess.run(['codesign', '--verify', '--deep', '--strict', '--verbose=4', str(application)], check=True)
     print("OK ->", exe)
     return 0
 

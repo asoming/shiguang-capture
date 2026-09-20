@@ -10,3 +10,8 @@
 *.jpg binary
 *.ico binary
 *.icns binary
+
+# Model dictionaries are integrity-checked byte for byte on every platform.
+src/shiguang_capture/ocr/data/*.txt text eol=lf
+*.onnx binary
+*.sh text eol=lf

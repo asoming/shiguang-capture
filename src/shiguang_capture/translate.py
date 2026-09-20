@@ -206,6 +206,9 @@ def create_translator(config) -> object:
     """按配置创建翻译后端：优先离线神经模型，不可用则词典兜底。"""
     if getattr(config, "allow_cloud_translate", False):
         return CloudBackend(getattr(config, "cloud_provider", "generic"))
+    from .offline_translation import available, BundledTranslator
+    if available():
+        return BundledTranslator()
     if argos_available():
         try:
             return ArgosBackend()

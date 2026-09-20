@@ -11,66 +11,63 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRect, Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRect, Qt, Signal
 from PySide6.QtGui import (
     QColor, QGuiApplication, QImage, QKeyEvent, QMouseEvent, QPainter, QPen,
 )
-from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QToolButton, QWidget
 
 from ..colors import rgb_to_hex
 from ..geometry import Rect
 from .grabber import virtual_desktop_rect, capture_frames, compose_region
 from ..ui.theme import STYLE
+from ..ui.tool_icons import tool_icon
+from ..ui.selection_canvas import SelectionCanvas
+from ..geometry import union
 
 _HANDLE_R = 8           # 手柄命中半径（屏幕像素）
 _MIN_W = 8              # 编辑态最小选区
 _TOOLBAR_H = 38
 
-# Every action has one explicit output; annotation opens the image workbench.
-_ACTIONS = [
-    ("edit", "标注", "打开工作台标注与校对"),
-    ("pin", "贴图", "贴到桌面"),
-    ("ocr", "提取文字", "本地识别，完成后手动复制"),
-    ("scroll", "长截图", "滚动长截图 · 实验"),
-    ("save", "保存…", "选择文件位置"),
-    ("copy", "复制", "复制图片（Enter），不自动保存"),
-    ("cancel", "取消", "取消（Esc）"),
-]
+_TOOLS = [('view','调整选区'), ('rect','矩形'), ('arrow','箭头'), ('pen','画笔'),
+          ('text','文字'), ('redact','实色遮盖'), ('undo','撤销 Ctrl+Z'), ('redo','重做 Ctrl+Y')]
+_ACTIONS = [('pin','贴图'), ('ocr','文字识别'), ('code','代码识别'), ('table','表格识别'),
+            ('scroll','长截图'), ('save','保存 Ctrl+S'), ('copy','复制 Enter / Ctrl+C'), ('cancel','取消 Esc')]
 
 
 class _Toolbar(QWidget):
-    """选区下方的动作工具栏（子窗口部件，自动处理自身事件）。
-
-    QQ 截图的工具栏是「一排图标 + 悬停提示」的形态，这里照搬：
-    图标按钮 + tooltip，确认按钮高亮为主色。
-    """
-
     action_clicked = Signal(str)
 
-    def __init__(self, parent: QWidget) -> None:
+    def __init__(self, parent, selection_only=False):
         super().__init__(parent)
-        self.setFixedHeight(48)
-        self.setStyleSheet(STYLE + "QWidget{background:#EDF3F7;} QPushButton{padding:5px 9px;}")
+        self.setFixedHeight(44)
+        self.setStyleSheet(STYLE + "QWidget{background:#FFF;} QToolButton{border:0;border-radius:4px;padding:4px;} QToolButton:hover{background:#E1ECEF;} QToolButton:checked{background:#CFE7E9;}")
         row = QHBoxLayout(self)
-        row.setContentsMargins(6, 4, 6, 4)
-        row.setSpacing(2)
-        for action, label, tip in _ACTIONS:
-            btn = QPushButton(label)
-            btn.setToolTip(tip)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            if action == "copy":
-                btn.setObjectName("primary")
-            elif action == "cancel":
-                btn.setObjectName("danger")
-            btn.clicked.connect(lambda _=False, a=action: self.action_clicked.emit(a))
-            row.addWidget(btn)
-            if action in ("pin", "ocr"):
-                # 分组视觉分隔（对齐 QQ 截图：编辑 / 识别 / 输出 三段）
-                sep = QWidget()
-                sep.setFixedWidth(1)
-                sep.setStyleSheet(
-                    "background:#364052;margin-top:6px;margin-bottom:6px")
-                row.addWidget(sep)
+        row.setContentsMargins(6,4,6,4)
+        row.setSpacing(1)
+        self.buttons = {}
+        entries = [('copy','确认选区 Enter'), ('cancel','取消 Esc')] if selection_only else _TOOLS+_ACTIONS
+        for action, label in entries:
+            button = QToolButton()
+            button.setIcon(tool_icon(action))
+            button.setAccessibleName(label)
+            button.setToolTip(label)
+            button.setFixedSize(32,34)
+            button.setCheckable(action in {'view','rect','arrow','pen','text','redact'})
+            button.setChecked(action == 'view')
+            button.clicked.connect(lambda checked=False, value=action: self.action_clicked.emit(value))
+            row.addWidget(button)
+            self.buttons[action] = button
+            if action in {'redo','scroll'}:
+                line = QWidget()
+                line.setFixedWidth(1)
+                line.setStyleSheet('background:#D5E1E9;margin:6px 3px;')
+                row.addWidget(line)
+
+    def select_tool(self, tool):
+        for key, button in self.buttons.items():
+            if button.isCheckable():
+                button.setChecked(key == tool)
 
 
 class RegionSelector(QWidget):
@@ -81,10 +78,10 @@ class RegionSelector(QWidget):
     MAG_SIZE = 120
     MAG_CELLS = 15
 
-    def __init__(self, frames=None) -> None:
+    def __init__(self, frames=None, selection_only=False) -> None:
         super().__init__()
         self._frames = capture_frames() if frames is None else frames
-        bounds = virtual_desktop_rect()
+        bounds = union([frame.bounds for frame in self._frames])
         self._bounds = bounds
         self.setGeometry(bounds.x, bounds.y, bounds.width, bounds.height)
         self.setWindowFlags(
@@ -102,11 +99,15 @@ class RegionSelector(QWidget):
         self._active_handle: str | None = None
         self._move_offset: QPoint | None = None
         self._cursor: QPoint | None = None
-        self._snapshot: QImage | None = compose_region(self._frames, bounds, density=1)     # 全屏缓存快照
+        self._snapshot: QImage | None = compose_region(self._frames, bounds)     # 全屏缓存快照
 
-        self._toolbar = _Toolbar(self)
+        self._toolbar = _Toolbar(self, selection_only)
         self._toolbar.action_clicked.connect(self._on_action)
         self._toolbar.hide()
+        self._canvas = SelectionCanvas(self)
+        self._canvas.hide()
+        self._canvas_rect = None
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setCursor(Qt.CursorShape.CrossCursor)
 
     # ---------- 生命周期 ----------
@@ -116,14 +117,52 @@ class RegionSelector(QWidget):
             self._snapshot = self._grab_full_snapshot()
 
     def _grab_full_snapshot(self) -> QImage:
-        return compose_region(self._frames, self._bounds, density=1)
+        return compose_region(self._frames, self._bounds)
 
     def selected_image(self, rect: Rect) -> QImage:
+        if self._canvas_rect == rect and not self._canvas.image.isNull():
+            self._canvas.commit_text()
+            return self._canvas.rendered_image()
         return compose_region(self._frames, rect)
 
     def closeEvent(self, event):
         self.cancelled.emit()
         super().closeEvent(event)
+
+    def reset_selection(self):
+        self._canvas.commit_text()
+        self._canvas.hide()
+        self._canvas_rect = None
+        self._canvas.set_image(QImage())
+        self._sel = None
+        self._state = self.IDLE
+        self._toolbar.hide()
+        self._toolbar.select_tool('view')
+        self._canvas.set_tool('view')
+        self.update()
+
+    def _sync_canvas(self, moved=False):
+        if not self._sel or not self._sel.is_valid:
+            return
+        marks = list(self._canvas.marks)
+        undone, history = list(self._canvas.undone), list(self._canvas.history)
+        old_rect = self._canvas_rect
+        old_density = self._canvas.image.width()/old_rect.width if old_rect else 1
+        image = compose_region(self._frames, self._sel)
+        density = image.width()/self._sel.width
+        self._canvas.set_image(image)
+        if old_rect:
+            dx = 0 if moved else old_rect.x-self._sel.x
+            dy = 0 if moved else old_rect.y-self._sel.y
+            versions = marks + [mark for state in history+undone for mark in state]
+            for mark in versions:
+                mark.points = [QPointF((point.x()/old_density+dx)*density,
+                                      (point.y()/old_density+dy)*density) for point in mark.points]
+            self._canvas.marks, self._canvas.undone, self._canvas.history = marks, undone, history
+        self._canvas_rect = self._sel
+        self._canvas.setGeometry(self._local_sel())
+        self._canvas.show()
+        self._toolbar.raise_()
 
     # ---------- 坐标换算 ----------
     def _to_local(self, global_pos: QPoint) -> QPoint:
@@ -173,8 +212,20 @@ class RegionSelector(QWidget):
 
     # ---------- 鼠标 ----------
     def mousePressEvent(self, e: QMouseEvent) -> None:
+        if e.button() == Qt.MouseButton.RightButton:
+            if self._sel:
+                self.reset_selection()
+            else:
+                self._on_action('cancel')
+            return
         if e.button() != Qt.MouseButton.LeftButton:
             return
+        if self._state == self.EDITING and self._canvas.isVisible():
+            point = self._canvas.mapFrom(self, e.position().toPoint())
+            if self._canvas.edit_text_at(QPointF(point)):
+                return
+        self._canvas.commit_text()
+        self._canvas.hide()
         gp = e.globalPosition().toPoint()
         local = self._to_local(gp)
         zone, handle = self._zone_at(local)
@@ -188,6 +239,8 @@ class RegionSelector(QWidget):
             # 空白处按下：开始创建新选区
             self._drag_mode = "create"
             self._drag_origin = gp
+            self._canvas_rect = None
+            self._canvas.set_image(QImage())
             self._sel = None
             self._state = self.IDLE
             self._toolbar.hide()
@@ -243,7 +296,13 @@ class RegionSelector(QWidget):
                 self._toolbar.show()
             else:
                 self._sel = None
+        if mode is not None and self._sel and self._state == self.EDITING:
+            self._sync_canvas(moved=mode == 'move')
         self.update()
+
+    def mouseDoubleClickEvent(self, event):
+        if self._sel and event.button() == Qt.MouseButton.LeftButton:
+            self._on_action('copy')
 
     def _reposition_toolbar(self) -> None:
         s = self._local_sel()
@@ -257,11 +316,20 @@ class RegionSelector(QWidget):
             y = s.top() - th - 8
         if y < 4:                                  # 上方也放不下 → 放进选区内部
             y = s.bottom() - th - 8
-        self._toolbar.move(x, y)
+        self._toolbar.move(x, max(4, y))
+        self._toolbar.raise_()
 
     # ---------- 键盘 ----------
     def keyPressEvent(self, e: QKeyEvent) -> None:
         key = e.key()
+        if e.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            actions = {Qt.Key.Key_C:'copy', Qt.Key.Key_S:'save', Qt.Key.Key_Z:'undo', Qt.Key.Key_Y:'redo'}
+            action = actions.get(key)
+            if action:
+                if action == 'undo' and e.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                    action = 'redo'
+                self._on_action(action)
+                return
         if key == Qt.Key.Key_Escape:
             self.hide()
             self.cancelled.emit()
@@ -276,11 +344,20 @@ class RegionSelector(QWidget):
         }.get(key)
         if nudge and self._state == self.EDITING and self._sel:
             self._sel = self._sel.nudged(*nudge, self._bounds)
+            self._sync_canvas(moved=True)
             self._reposition_toolbar()
             self.update()
 
     # ---------- 动作 ----------
     def _on_action(self, action: str) -> None:
+        if action in {'view','rect','arrow','pen','text','redact'}:
+            self._canvas.set_tool(action)
+            self._toolbar.select_tool(action)
+            self.setFocus()
+            return
+        if action in {'undo','redo'}:
+            getattr(self._canvas, action)()
+            return
         if action == "cancel":
             self.hide()
             self.cancelled.emit()
@@ -289,6 +366,7 @@ class RegionSelector(QWidget):
             self._finish(action)
 
     def _finish(self, action: str) -> None:
+        self._canvas.commit_text()
         rect = self._sel
         self._toolbar.hide()
         self.hide()
@@ -300,12 +378,15 @@ class RegionSelector(QWidget):
             return
         p = QPainter(self)
         # 遮罩：快照 + 半透明压暗
-        p.drawImage(0, 0, self._snapshot)
+        p.drawImage(self.rect(), self._snapshot)
         p.fillRect(self.rect(), QColor(10, 12, 16, 110))
         s = self._local_sel()
         if s and s.width() > 0:
             # 选区恢复清晰
-            p.drawImage(s, self._snapshot, s)
+            p.save()
+            p.setClipRect(s)
+            p.drawImage(self.rect(), self._snapshot)
+            p.restore()
             p.setPen(QPen(QColor(125, 155, 255), 2))
             p.drawRect(s)
             p.setPen(QColor(233, 237, 243))
@@ -318,14 +399,16 @@ class RegionSelector(QWidget):
                 p.setBrush(QColor(255, 255, 255))
                 for hp in self._handles().values():
                     p.drawEllipse(hp, 4, 4)
-        if self._cursor:
+        if self._cursor and self._state == self.IDLE:
             self._draw_magnifier(p)
         p.end()
 
     def _draw_magnifier(self, p: QPainter) -> None:
         local = self._to_local(self._cursor)
         n = self.MAG_CELLS
-        src = QRect(local.x() - n // 2, local.y() - n // 2, n, n)
+        density = self._snapshot.width() / self.width()
+        pixel = QPoint(round(local.x()*density), round(local.y()*density))
+        src = QRect(pixel.x() - n // 2, pixel.y() - n // 2, n, n)
         src = src.intersected(self._snapshot.rect())
         mag_x = min(local.x() + 24, self.width() - self.MAG_SIZE - 8)
         mag_y = min(local.y() + 24, self.height() - self.MAG_SIZE - 44)
@@ -340,8 +423,8 @@ class RegionSelector(QWidget):
         p.drawLine(mag_x + mid, mag_y, mag_x + mid, mag_y + self.MAG_SIZE)
         p.drawLine(mag_x, mag_y + mid, mag_x + self.MAG_SIZE, mag_y + mid)
         center = self._snapshot.pixelColor(
-            max(0, min(local.x(), self._snapshot.width() - 1)),
-            max(0, min(local.y(), self._snapshot.height() - 1)))
+            max(0, min(pixel.x(), self._snapshot.width() - 1)),
+            max(0, min(pixel.y(), self._snapshot.height() - 1)))
         p.setPen(QColor(233, 237, 243))
         p.drawText(mag_x, mag_y + self.MAG_SIZE + 18,
                    f"({self._cursor.x()}, {self._cursor.y()})  "
