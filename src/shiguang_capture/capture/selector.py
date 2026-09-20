@@ -129,6 +129,15 @@ class RegionSelector(QWidget):
             super().show()
         self.raise_()
         self.activateWindow()
+        if QGuiApplication.platformName() == 'cocoa':
+            # Cocoa can still stack system menu/status windows above a Qt
+            # popup. Set the native level after Qt has applied its own flags.
+            import objc
+            from AppKit import NSScreenSaverWindowLevel
+            view = objc.objc_object(c_void_p=int(self.winId()))
+            window = view.window()
+            window.setLevel_(NSScreenSaverWindowLevel)
+            window.orderFrontRegardless()
 
     def showEvent(self, e) -> None:  # noqa: N802
         super().showEvent(e)

@@ -27,6 +27,13 @@ def verify_selector_coverage(app, destination):
         bounds = selector._bounds
         report['expected_geometry'] = [bounds.x, bounds.y, bounds.width, bounds.height]
         report['actual_geometry'] = list(selector.geometry().getRect())
+        report['visible'] = selector.isVisible()
+        report['window_flags'] = int(selector.windowFlags())
+        if app.platformName() == 'cocoa':
+            import objc
+            native = objc.objc_object(c_void_p=int(selector.winId())).window()
+            report['native_level'] = int(native.level())
+            report['native_visible'] = bool(native.isVisible())
         assert selector.geometry() == QRect(*report['expected_geometry']), report
         selector.grab().save(str(output/'selector.png'))
         expected = QColor('#714E86')  # Frozen image plus production dimming color.
@@ -35,12 +42,13 @@ def verify_selector_coverage(app, destination):
             assert not capture.isNull(), 'Cannot inspect the desktop'
             width, height = capture.width(), capture.height()
             samples = []
+            entry = {'name': screen.name(), 'samples': samples}
+            report['screens'].append(entry)
             for x, y in [(width//2, 10), (width//2, height-10), (width//2, height-60),
                          (20, height-10), (width-20, height-10)]:
                 pixel = capture.pixelColor(x, y)
                 samples.append({'x': x, 'y': y, 'color': pixel.name()})
                 assert max(abs(a-b) for a, b in zip(pixel.getRgb()[:3], expected.getRgb()[:3])) <= 3, samples
-            report['screens'].append({'name': screen.name(), 'samples': samples})
         # The overlay must still accept selection, text input and Escape at its
         # native window level (especially Cocoa's popup rather than utility).
         QTest.mousePress(selector, Qt.MouseButton.LeftButton, pos=QPoint(40, 40))
