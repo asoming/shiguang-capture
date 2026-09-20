@@ -39,6 +39,12 @@ def collect(destination):
         entries_toc = ast.literal_eval(toc.read_text())[0] if toc.is_file() else []
         sources = sorted({source for name, source, kind in entries_toc
                           if kind == 'BINARY' and source.startswith(('/usr/lib/', '/lib/'))})
+        # usr-merge aliases may differ from the paths recorded by dpkg.
+        aliases=[]
+        for source in sources:
+            alternate = '/usr'+source if source.startswith('/lib/') else source.removeprefix('/usr')
+            if Path(alternate).is_file() and Path(alternate).samefile(source): aliases.append(alternate)
+        sources = sorted(set(sources+aliases))
         query=subprocess.run(['dpkg-query','-S',*sources],capture_output=True,text=True) if sources else None
         for line in query.stdout.splitlines() if query else []:
             owner=line.split(': ',1)[0]

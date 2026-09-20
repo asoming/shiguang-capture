@@ -50,8 +50,8 @@ class ResultPanel(QWidget):
         self.meta = QLabel('打开图片或截取屏幕，标注、校对，然后带走。', objectName='muted')
         self.meta.setWordWrap(True)
         title.addWidget(self.meta)
-        heading.addLayout(title)
-        heading.addStretch()
+        heading.addLayout(title, 1)
+        heading.addSpacing(12)
         for label, signal in [('截图', self.capture_requested), ('粘贴图片', self.paste_requested), ('打开图片', self.open_requested)]:
             button = QPushButton(label)
             button.clicked.connect(signal.emit)
@@ -264,6 +264,7 @@ class ResultPanel(QWidget):
 
     def _apply_mode(self, mode):
         self._mode = mode
+        self.source_edit.setStyleSheet("QPlainTextEdit { font-family: 'DejaVu Sans Mono', 'Consolas', monospace; }" if mode == 'code' else '')
         self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(mode)))
         self.output_format.clear()
         self.output_format.addItem('纯文本', 'text')
