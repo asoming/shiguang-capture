@@ -53,31 +53,34 @@ class AudioCapture:
         self.active = threading.Event()
         self.error = None
         self.queues = [queue.Queue(maxsize=100) for _ in device_ids]
-        self.ready = [threading.Event() for _ in device_ids]
+        self.generation = 0
         self.threads = []
-        for device_id, chunks, ready in zip(device_ids, self.queues, self.ready):
-            thread = threading.Thread(target=self._read, args=(device_id, chunks, ready), daemon=True)
+        for device_id, chunks in zip(device_ids, self.queues):
+            thread = threading.Thread(target=self._read, args=(device_id, chunks), daemon=True)
             thread.start()
             self.threads.append(thread)
 
-    def _read(self, device_id, chunks, ready):
+    def _read(self, device_id, chunks):
         try:
             import soundcard
             device = soundcard.get_microphone(device_id, include_loopback=True)
             # Open only during active recording; pause releases the microphone.
             while not self.stop.is_set():
                 if not self.active.wait(.05):
-                    ready.set()
                     continue
+                generation = self.generation
                 with device.recorder(samplerate=48000, channels=2, blocksize=960) as recorder:
-                    ready.set()
-                    while self.active.is_set() and not self.stop.is_set():
+                    while self.active.is_set() and not self.stop.is_set() and generation == self.generation:
                         data = recorder.record(numframes=960)
-                        if self.active.is_set():
+                        if self.active.is_set() and generation == self.generation:
                             chunks.put_nowait(data)
         except Exception as exc:
             self.error = f'音频录制失败：{exc}'
-            ready.set()
+
+    def available(self):
+        if self.error:
+            raise RuntimeError(self.error)
+        return bool(self.queues) and all(not chunks.empty() for chunks in self.queues)
 
     def take(self):
         import numpy as np
@@ -88,6 +91,7 @@ class AudioCapture:
 
     def pause(self):
         self.active.clear()
+        self.generation += 1
         for chunks in self.queues:
             while not chunks.empty():
                 chunks.get_nowait()
@@ -160,6 +164,7 @@ def record(connection, options: RecordingOptions):
         control.requested.connect(control.apply)
         latest = QVideoFrame()
         started, paused_at, paused_total = None, None, 0.0
+        resuming = False
         deadline = time.monotonic() + 15
         last_status, last_space_check = 0.0, 0.0
         device_ids = [value for value in (options.microphone, options.system_audio) if value]
@@ -177,7 +182,7 @@ def record(connection, options: RecordingOptions):
 
         def frame_changed(frame):
             nonlocal latest
-            if frame.isValid() and paused_at is None:
+            if frame.isValid() and (paused_at is None or resuming):
                 with frame_lock:
                     latest = QVideoFrame(frame)
 
@@ -188,7 +193,7 @@ def record(connection, options: RecordingOptions):
             app.screenRemoved.connect(lambda removed: capture_errors.put('录制屏幕已断开；可恢复已录内容。') if removed == screen else None)
 
         def tick():
-            nonlocal writer, audio, started, paused_at, paused_total, last_status, last_space_check, finished, latest, deadline
+            nonlocal writer, audio, started, paused_at, paused_total, last_status, last_space_check, finished, latest, deadline, resuming
             if finished:
                 return
             try:
@@ -202,8 +207,9 @@ def record(connection, options: RecordingOptions):
                         control.requested.emit(False)
                         if audio:
                             audio.close()
-                            for chunk in audio.take():
-                                writer.write_audio(chunk)
+                            if writer:
+                                for chunk in audio.take():
+                                    writer.write_audio(chunk)
                         connection.send({'type': 'saving'})
                         if writer is None:
                             connection.send({'type': 'cancelled'})
@@ -216,11 +222,12 @@ def record(connection, options: RecordingOptions):
                         control.requested.emit(False)
                         activity.stop()
                         if audio:
+                            for chunk in audio.take():
+                                writer.write_audio(chunk)
                             audio.pause()
                         connection.send({'type': 'paused'})
-                    if command == 'resume' and paused_at is not None:
-                        paused_total += now - paused_at
-                        paused_at = None
+                    if command == 'resume' and paused_at is not None and not resuming:
+                        resuming = True
                         with frame_lock:
                             latest = QVideoFrame()
                         deadline = now + 15
@@ -228,8 +235,7 @@ def record(connection, options: RecordingOptions):
                         if audio:
                             audio.active.set()
                         control.requested.emit(True)
-                        connection.send({'type': 'recording'})
-                if paused_at is not None:
+                if paused_at is not None and not resuming:
                     return
                 with frame_lock:
                     current_frame = QVideoFrame(latest)
@@ -237,6 +243,17 @@ def record(connection, options: RecordingOptions):
                     if now > deadline:
                         raise RuntimeError('未收到屏幕画面。请检查系统屏幕录制权限后重试。')
                     return
+                if device_ids and audio is None:
+                    audio = AudioCapture(device_ids)
+                    audio.active.set()
+                if audio and (started is None or resuming) and not audio.available():
+                    if now > deadline:
+                        raise RuntimeError('未收到所选音源数据，请检查录音权限和音频设备。')
+                    return
+                if resuming:
+                    paused_total += now-paused_at
+                    paused_at, resuming = None, False
+                    connection.send({'type': 'recording'})
                 conversion_start = time.perf_counter()
                 if options.window_title:
                     image = rgb_image(current_frame)
@@ -253,9 +270,6 @@ def record(connection, options: RecordingOptions):
                 metrics['image_conversion_ms'] += (time.perf_counter()-conversion_start)*1000
                 if writer is None:
                     writer = VideoWriter(Path(options.target), image.width(), image.height(), options.fps, bool(device_ids))
-                    audio = AudioCapture(device_ids) if device_ids else None
-                    if audio:
-                        audio.active.set()
                     started = now = time.monotonic()
                     connection.send({'type': 'recording', 'recovery': str(writer.recovery)})
                 elapsed = now - started - paused_total
@@ -283,6 +297,8 @@ def record(connection, options: RecordingOptions):
             # A native GUI event loop can delay timers during window capture,
             # especially on macOS. Keep encoding cadence on its own clock while
             # all capture start/stop operations stay on the Qt main thread.
+            from .activity import configure_encoder_thread
+            metrics['thread_qos_result'] = configure_encoder_thread()
             previous = time.monotonic()
             while not finished and not stop_clock.is_set():
                 began = time.monotonic()

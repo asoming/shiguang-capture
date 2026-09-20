@@ -69,6 +69,10 @@ def main():
         assert abs(signal).max()<=1, 'Mix clipped outside valid range'
         report.update(status='passed', samples=len(audio), tone_440=float(spectrum[440]),
                       tone_880=float(spectrum[880]), resumed_samples=sum(len(chunk) for chunk in resumed))
+        capture.close()
+        capture = None
+        from shiguang_capture.recording.acceptance import main as record_desktop
+        record_desktop(output/'native-mixed', audio_devices=[name+'.monitor' for name in devices])
     except Exception as exc:
         report['error']=str(exc)
         raise

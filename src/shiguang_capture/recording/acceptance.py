@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 
-def main(output_path=None, window_mode=False):
+def main(output_path=None, window_mode=False, audio_devices=()):
     from PySide6.QtCore import Qt, QPoint
     from PySide6.QtWidgets import QApplication, QWidget
     from shiguang_capture.recording.worker import RecordingOptions, record
@@ -22,7 +22,8 @@ def main(output_path=None, window_mode=False):
     output = Path(output_path or 'artifacts/native-recording')
     output.mkdir(parents=True, exist_ok=True)
     report = {'os': platform.platform(), 'machine': platform.machine(), 'python': platform.python_version(),
-              'status': 'failed', 'scope': 'native single-display region, silent recording, pause/resume, MP4 decode'}
+              'status': 'failed', 'scope': 'native single-display capture, pause/resume, MP4 decode',
+              'audio_scope': 'two synthetic PulseAudio tones' if audio_devices else 'silent'}
     report['capture_mode'] = 'window' if window_mode else 'region'
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
@@ -72,6 +73,8 @@ def main(output_path=None, window_mode=False):
         parent, child = context.Pipe()
         options = RecordingOptions(str(output/'native-pause-resume.mp4'), screen.name(),
                                    None if window_mode else rect, 30,
+                                   microphone=audio_devices[0] if audio_devices else None,
+                                   system_audio=audio_devices[1] if len(audio_devices)>1 else None,
                                    window_title=window.windowTitle() if window_mode else None)
         process = context.Process(target=record, args=(child, options))
         process.start()
@@ -138,6 +141,15 @@ def main(output_path=None, window_mode=False):
         assert frames[0].height == round(height*screen.devicePixelRatio())//2*2
         report.update(status='passed', frame_count=len(frames), duration=duration,
                       width=frames[0].width, height=frames[0].height, video=path.name)
+        if audio_devices:
+            with av.open(str(path)) as media:
+                audio_frames = list(media.decode(audio=0))
+            signal = np.concatenate([frame.to_ndarray()[0] for frame in audio_frames])
+            audio_duration = len(signal)/48000
+            assert abs(audio_duration-duration) < .4, f'Audio/video duration differs: {audio_duration} vs {duration}'
+            spectrum = abs(np.fft.rfft(signal[-48000:]))
+            assert spectrum[440] > 100 and spectrum[880] > 100, 'Mixed audio missing from MP4'
+            report.update(audio_duration=audio_duration, tone_440=float(spectrum[440]), tone_880=float(spectrum[880]))
     except Exception as exc:
         report['error'] = str(exc)
         raise
