@@ -18,6 +18,27 @@ except ImportError:
     pass
 
 
+def remove_unused_qt_modules(packages):
+    """Remove unused plugins, frameworks and their macOS cross-link aliases."""
+    import shutil
+    patterns = (
+        '**/libqpdf.so', '**/libqpdf.dylib', '**/qpdf.dll',
+        '**/libqtvirtualkeyboardplugin.so', '**/libqtvirtualkeyboardplugin.dylib',
+        '**/qtvirtualkeyboardplugin.dll', '**/libQt6Pdf.so*', '**/Qt6Pdf*.dll',
+        '**/QtPdf.framework', '**/QtPdfWidgets.framework', '**/QtPdf', '**/QtPdfWidgets',
+        '**/libQt6VirtualKeyboard*.so*', '**/Qt6VirtualKeyboard*.dll',
+        '**/QtVirtualKeyboard.framework', '**/QtVirtualKeyboardQml.framework',
+        '**/QtVirtualKeyboard', '**/QtVirtualKeyboardQml',
+    )
+    for package in packages:
+        for pattern in patterns:
+            for unused in package.glob(pattern):
+                if unused.is_symlink() or not unused.is_dir():
+                    unused.unlink()
+                else:
+                    shutil.rmtree(unused)
+
+
 def main() -> int:
     import os
     media = Path(os.environ.get('SHIGUANG_MEDIA_BUILD', ROOT/'build/media-runtime'))
@@ -94,20 +115,7 @@ def main() -> int:
     package_roots = [bundle]
     if sys.platform == 'darwin':
         package_roots.append(ROOT/'dist/ShiguangCapture.app/Contents')
-    unused_patterns = (
-        '**/libqpdf.so', '**/libqpdf.dylib', '**/qpdf.dll',
-        '**/libqtvirtualkeyboardplugin.so', '**/libqtvirtualkeyboardplugin.dylib',
-        '**/qtvirtualkeyboardplugin.dll', '**/libQt6Pdf.so*', '**/Qt6Pdf*.dll',
-        '**/QtPdf.framework', '**/QtPdfWidgets.framework',
-        '**/libQt6VirtualKeyboard*.so*', '**/Qt6VirtualKeyboard*.dll', '**/QtVirtualKeyboard.framework',
-    )
-    for package in package_roots:
-        for pattern in unused_patterns:
-            for unused in package.glob(pattern):
-                if unused.is_symlink() or not unused.is_dir():
-                    unused.unlink()
-                else:
-                    shutil.rmtree(unused)
+    remove_unused_qt_modules(package_roots)
     collect(bundle / 'licenses/dependencies')
     import os
     media = Path(os.environ.get('SHIGUANG_MEDIA_BUILD', ROOT/'build/media-runtime'))
@@ -146,7 +154,7 @@ def main() -> int:
         # Adding notices/metadata changes the bundle seal. Re-sign the finished
         # preview locally; this is ad-hoc signing, not Developer ID/notarization.
         subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(application)], check=True)
-        subprocess.run(['codesign', '--verify', '--deep', '--strict', str(application)], check=True)
+        subprocess.run(['codesign', '--verify', '--deep', '--strict', '--verbose=4', str(application)], check=True)
     print("OK ->", exe)
     return 0
 
