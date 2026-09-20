@@ -36,6 +36,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb openbox x11-utils libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libdbus-1-3 libfontconfig1 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0 libxcb-render-util0 libpulse0
       - name: Install capture and encoding dependencies
+        id: dependencies
         run: pip install -e ".[gui,record,dev]"
       - name: Encoder, crash recovery and direct annotation tests
         env:
@@ -50,12 +51,12 @@ jobs:
         if: runner.os != 'Linux'
         run: python scripts/accept_desktop_recording.py artifacts/native-recording
       - name: Record native Linux window
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && runner.os == 'Linux' }}
         env:
           XDG_SESSION_TYPE: x11
         run: xvfb-run -a -s '-screen 0 1280x800x24' sh -c 'openbox --sm-disable >artifacts/openbox.log 2>&1 & sleep 2; xprop -root _NET_SUPPORTING_WM_CHECK; python scripts/accept_desktop_recording.py artifacts/native-window --window'
       - name: Record native Windows or macOS window
-        if: runner.os != 'Linux'
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && runner.os != 'Linux' }}
         run: python scripts/accept_desktop_recording.py artifacts/native-window --window
       - name: Upload evidence, including failures
         if: always()
