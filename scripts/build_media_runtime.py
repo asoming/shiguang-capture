@@ -75,7 +75,8 @@ def main():
     environment[library_var] = str(prefix/'lib') + os.pathsep + environment.get(library_var, '')
     if sys.platform == 'win32':
         environment['INCLUDE'] = str(prefix/'include')+';'+environment.get('INCLUDE', '')
-        environment['LIB'] = str(prefix/'lib')+';'+environment.get('LIB', '')
+        # FFmpeg's MSVC install puts DLL import libraries beside the DLLs.
+        environment['LIB'] = ';'.join((str(prefix/'bin'), str(prefix/'lib'), environment.get('LIB', '')))
     subprocess.run([sys.executable, '-m', 'pip', 'install', 'Cython>=3.1,<4'], check=True)
     # --no-cache-dir avoids reusing a wheel from a different codec build.
     subprocess.run([sys.executable, '-m', 'pip', 'wheel', 'av==16.1.0', '--no-binary=av',
