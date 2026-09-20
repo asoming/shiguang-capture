@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import queue
-import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -320,16 +319,7 @@ def record(connection, options: RecordingOptions):
         capture.start()
         encoder_thread = threading.Thread(target=encode_loop, name='screen-encoder', daemon=True)
         encoder_thread.start()
-        if sys.platform == 'darwin':
-            # The Cocoa event dispatcher's blocking wait can starve Python's
-            # encoder thread. Dispatch pending Qt events, then yield the GIL
-            # explicitly. This worker has no interactive GUI or nested dialogs.
-            from PySide6.QtCore import QEventLoop
-            while not finished:
-                app.processEvents(QEventLoop.ProcessEventsFlag.AllEvents, 5)
-                time.sleep(.005 if capture.isActive() else .05)
-        else:
-            app.exec()
+        app.exec()
     except Exception as exc:
         connection.send({'type': 'error', 'message': str(exc), 'recovery': str(writer.recovery) if writer else None})
     finally:
