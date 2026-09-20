@@ -6,12 +6,15 @@
 
 ## 已取得的新增证据
 
-- 原生桌面流程：[GitHub Actions 35491338002](https://github.com/asoming/shiguang-capture/actions/runs/35491338002)。Windows Server 2025、macOS 14 arm64、Ubuntu 22.04/24.04 Xvfb：从真实桌面采集自建色块窗口，暂停/恢复、保存 MP4、逐帧解码检查颜色、尺寸与时间轴。不是仅导入模块或模拟编码。
-- 本机 Ubuntu 22.04 X11、DPR=2：同一录屏测试通过，320×180 逻辑区域输出 640×360；暂停阶段的色块未进入输出。硬件及显示环境不外推到其他设备。
+- 当前原生桌面流程：[GitHub Actions 35494983371](https://github.com/asoming/shiguang-capture/actions/runs/35494983371)，提交 96150a9。Windows Server 2025、Ubuntu 22.04/24.04 Xvfb 的真实区域和窗口录制、16秒暂停恢复、MP4逐帧解码通过。macOS 14 arm64 区域仅21帧、窗口仅28帧，均未达到35帧门槛；不能计为三平台录屏全部通过。早期四环境短暂停记录 35491338002 仅作为历史，不替代当前门槛。
+- 本机 Ubuntu 22.04 X11、DPR=2：完整包暂停 16 秒后恢复测试通过，320×180 逻辑区域输出 640×360、74 帧；暂停阶段的色块未进入输出。硬件及显示环境不外推到其他设备。
 - `tests/test_inline_capture.py`：通过 Qt 鼠标/键盘事件验证直接标注、实色遮盖、原生像素导出、撤销重做、移动/调整选区保留标注、行内文字确认、取消不输出。
 - `tests/test_recording.py`：真实编码和解码视频/AAC，中文路径、同名保护、空间不足保留恢复文件、强制退出后恢复已完成片段。
-- `scripts/accept_linux_audio.py`：两个独立虚拟 PulseAudio 音源，440/880 Hz 混音、暂停和恢复；只验证系统音频路径，不冒充真实麦克风验证。
+- `scripts/accept_linux_audio.py`：两个独立虚拟 PulseAudio 音源，440/880 Hz 混音、暂停恢复与完整 MP4 解码通过；录制 73 帧，音视频时长差约 0.17 秒；不冒充实体麦克风验证。
 - `tests/test_output_controls.py`：复制失败不误报成功；JSON 的字符串、空单元格与版本字段；输出格式分别记忆；配置校验。
+
+- 本机完整回归 200 项通过，3 项可选 Argos 测试跳过；新增 Windows 无控制台自测异常必须写日志并退出的回归检查。
+- Windows/macOS 独立包：[GitHub Actions 35495456072](https://github.com/asoming/shiguang-capture/actions/runs/35495456072)，提交 ac738d4，两个作业均通过。Windows .exe包含真实桌面录制与16秒暂停恢复；macOS .app只通过OCR/编码及ad-hoc签名完整性，原生录屏仍失败。此签名不等于Developer ID认证或公证。
 
 ## 功能逐项追踪
 
@@ -87,7 +90,7 @@
 | REC-04 | 显式无声/麦克风/系统/混合音源 | 已实现音源选择；Linux虚拟系统/混音通过；实体麦克风、Windows音频、macOS系统声音待补 |
 | REC-05 | MP4/AAC、文件重名不覆盖、格式实际可解码 | 编码/解码与重名测试通过；录制帧率性能与长时间音画同步待补 |
 | REC-06 | 异常退出与空间不足可以恢复 | 强制终止/错误注入已有测试；保留可见 .sgc-recovery.mkv，恢复不删原件 |
-| REC-07 | 编码依赖和完整包 | 最小动态编码库已从源码构建；Linux完整包及macOS .app自测通过，Windows构建排查中；签名安装未完成 |
+| REC-07 | 编码依赖和完整包 | 最小动态编码库已从源码构建；Linux完整包、Windows .exe 与macOS .app的OCR/编码自测通过，Windows .exe原生录屏通过；macOS仅ad-hoc签名完整性校验，开发者签名/公证和安装权限验收未完成 |
 | REC-08 | 跨平台录制权限与设备变化 | 屏幕变化停止/保留恢复文件；拒绝/撤销权限实机路径待补 |
 
 候选项遵循 PRD 自身的版本规则：先标明未实现，不把“后续候选”包装成现有功能，也不偷偷计为验收成功。后续每关闭一项，须补测试命令、环境、结果和对应提交。
