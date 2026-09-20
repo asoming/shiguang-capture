@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shiguang-capture"
-version = "1.4.0b1"
+version = "1.4.0"
 description = "拾光 Capture — 屏幕信息捕获与再利用工具（截/钉/取/录 + 本地 OCR + 离线翻译）"
 readme = "README.md"
 license = { text = "MIT" }
@@ -36,6 +36,7 @@ ocr = [
     "opencv-python-headless>=4.8",  # OCR runs in its own process, separate from Qt
     "PyYAML>=6.0",                  # rapidocr 的隐式依赖（--no-deps 分批安装时发现）
 ]
+offline = ["ctranslate2==4.6.0", "sentencepiece==0.2.1"]
 translate = [
     "argostranslate>=1.9,<2",       # 离线神经翻译（CTranslate2 + SentencePiece）
     "ctranslate2>=4.0",
@@ -77,5 +78,5 @@ testpaths = ["tests"]
 addopts = "-q"
 
 [tool.setuptools.package-data]
-"shiguang_capture" = ["assets/*.ttf"]
+"shiguang_capture" = ["assets/*.ttf", "translation_data/**/*", "translation_data/manifest.json"]
 "shiguang_capture.ocr" = ["models.json", "data/*.onnx", "data/*.txt"]

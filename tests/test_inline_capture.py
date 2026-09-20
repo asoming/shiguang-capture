@@ -103,3 +103,54 @@ def test_twenty_annotation_steps_undo_redo_and_new_branch(selector):
     redact(selector)
     QTest.keyClick(selector, Qt.Key.Key_Y, Qt.KeyboardModifier.ControlModifier)
     assert len(canvas.marks) == 20 and canvas.marks[-1].tool == 'redact'
+
+
+def test_existing_text_can_be_clicked_edited_and_undone(selector):
+    canvas = selector._canvas
+    selector._on_action('text')
+    QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(25, 25))
+    canvas.text_input.setText('Original')
+    QTest.keyClick(canvas.text_input, Qt.Key.Key_Return)
+    selector._on_action('rect')
+    QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(160, 120))
+    QTest.mouseMove(canvas, QPoint(210, 170))
+    QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(210, 170))
+    selector._on_action('view')
+    center = canvas.text_bounds(canvas.marks[0]).center() * (canvas.width()/canvas.image.width())
+    QTest.mouseClick(selector, Qt.MouseButton.LeftButton, pos=canvas.mapTo(selector, center.toPoint()))
+    assert canvas.text_input is not None
+    assert canvas.text_input.text() == 'Original'
+    canvas.text_input.setText('Corrected')
+    QTest.keyClick(canvas.text_input, Qt.Key.Key_Return)
+    assert [m.text for m in canvas.marks] == ['Corrected', '']
+    canvas.undo()
+    assert canvas.marks[0].text == 'Original'
+    canvas.redo()
+    assert canvas.marks[0].text == 'Corrected'
+    selector._sel = selector._sel.translated(10, 20)
+    selector._sync_canvas(moved=True)
+    canvas.undo()
+    assert canvas.marks[0].text == 'Original'
+
+
+def test_dimming_preserves_native_pixel_detail(qt_session):
+    from PySide6.QtGui import QPainter
+    frame = QImage(400, 240, QImage.Format.Format_RGB32)
+    frame.fill(QColor('white'))
+    p = QPainter(frame)
+    p.setPen(QColor('black'))
+    for x in range(0, 400, 2):
+        p.drawLine(x, 0, x, 239)
+    p.end()
+    selector = RegionSelector([ScreenFrame(Rect(0, 0, 200, 120), frame, 2)])
+    selector.show()
+    qt_session.processEvents()
+    output = QImage(400, 240, QImage.Format.Format_ARGB32)
+    output.setDevicePixelRatio(2)
+    output.fill(0)
+    selector.render(output)
+    # One physical pixel per stripe must survive the dimming path at DPR 2.
+    assert output.pixelColor(40, 40).lightness() < 20
+    assert output.pixelColor(41, 40).lightness() > 100
+    selector.close()
+    selector.deleteLater()

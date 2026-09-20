@@ -15,6 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--desktop-test", action="store_true", help="使用合成窗口实测当前 X11 桌面")
     p.add_argument('--recording-self-test', action='store_true', help='使用合成画面与音调验证安装包编码')
     p.add_argument('--recording-desktop-test', metavar='OUTPUT', help='录制合成窗口并写入桌面验收报告')
+    p.add_argument('--translation-self-test', action='store_true', help='验证随包中英双向离线翻译')
     return p
 
 
@@ -28,6 +29,9 @@ def main() -> int:
     if args.version:
         print(f"{__app_name__} v{__version__}")
         return 0
+    if args.translation_self_test:
+        from .translation_selftest import run
+        return run()
     if args.recording_self_test:
         from .recording.selftest import run
         return run()

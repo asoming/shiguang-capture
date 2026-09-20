@@ -180,6 +180,7 @@ def test_redaction_invalidates_text_and_flattens(app):
     panel = ResultPanel()
     panel.set_image(image())
     panel.show_result('ocr', OCRResult('SECRET123', .99))
+    panel.canvas.checkpoint()
     panel.canvas.marks.append(Mark('redact', [QPointF(5, 5), QPointF(40, 40)]))
     panel.canvas.changed.emit()
     assert not panel.source_edit.toPlainText()

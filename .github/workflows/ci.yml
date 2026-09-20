@@ -84,7 +84,7 @@ jobs:
           SHIGUANG_NO_HOTKEYS: "1"
         run: python scripts/smoke_ocr_translate.py
 
-  # 正式包只发布 Linux；其他平台的 Qt jobs 是实验兼容性检查。
+  # Linux bundle; Windows/macOS bundles run in package-candidates.yml.
   package:
     runs-on: ubuntu-22.04
     needs: [test, qt-smoke, site-check]
@@ -105,6 +105,8 @@ jobs:
         run: |
           python scripts/build_media_runtime.py
           pip install --no-deps build/media-runtime/wheels/*.whl
+      - name: Prepare verified offline translation models
+        run: python scripts/build_translation_models.py
       - name: Build executable
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build/media-runtime/runtime/lib
@@ -112,6 +114,7 @@ jobs:
       - name: Test standalone package
         run: |
           dist/ShiguangCapture/ShiguangCapture --version
+          dist/ShiguangCapture/ShiguangCapture --translation-self-test
           dist/ShiguangCapture/ShiguangCapture --self-test
           dist/ShiguangCapture/ShiguangCapture --recording-self-test
           xvfb-run -a -s '-screen 0 1280x800x24' env XDG_SESSION_TYPE=x11 dist/ShiguangCapture/ShiguangCapture --recording-desktop-test artifacts/package-native

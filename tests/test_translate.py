@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from shiguang_capture.config import AppConfig
+from shiguang_capture.offline_translation import BundledTranslator
 from shiguang_capture.translate import (
     ArgosBackend, CloudBackend, LocalDictBackend, TranslationResult,
     argos_available, create_translator, detect_language, resolve_direction,
@@ -71,7 +72,7 @@ class TestLocalDictBackend:
 
     def test_zh_to_en(self):
         r = self.backend.translate("截图", "zh", "en")
-        assert "screenshot" in r.target_text
+        assert "screenshot" in r.target_text.lower()
 
     def test_word_boundary_no_partial(self):
         """'screenshots' 不应被 'screenshot' 部分替换。"""
@@ -83,7 +84,7 @@ class TestLocalDictBackend:
     def test_longest_zh_term_wins(self):
         """中文按词长倒序替换，'截图' 不应被拆成 '截' + '图'。"""
         r = self.backend.translate("截图工具", "zh", "en")
-        assert "screenshot" in r.target_text
+        assert "screenshot" in r.target_text.lower()
 
     def test_glossary_hits_recorded(self):
         r = self.backend.translate("save and copy", "en", "zh")
@@ -112,7 +113,7 @@ class TestCloudBackend:
 
 class TestFactory:
     def test_default_is_local(self):
-        assert isinstance(create_translator(AppConfig()), (LocalDictBackend, ArgosBackend))
+        assert isinstance(create_translator(AppConfig()), (LocalDictBackend, ArgosBackend, BundledTranslator))
 
     def test_cloud_when_allowed(self):
         cfg = AppConfig(allow_cloud_translate=True)
@@ -129,7 +130,7 @@ class TestTranslateText:
     def test_auto_zh_to_en(self):
         r = translate_text("截图工具很好用", AppConfig(), allow_cloud=False)
         assert r.source_lang == "zh" and r.target_lang == "en"
-        assert "screenshot" in r.target_text
+        assert "screenshot" in r.target_text.lower()
 
     def test_auto_en_to_zh(self):
         r = translate_text("save the screenshot", AppConfig(), allow_cloud=False)
@@ -142,7 +143,7 @@ class TestTranslateText:
             translate_text("hello", cfg, allow_cloud=False)
 
     def test_local_never_raises(self):
-        assert translate_text("nothing", AppConfig()).engine in ("local-dict", "argos-local")
+        assert translate_text("nothing", AppConfig()).engine in ("local-dict", "argos-local", "opus-mt-local-1.9")
 
     def test_unknown_lang_defaults_en_zh(self):
         r = translate_text("123 !!!", AppConfig())

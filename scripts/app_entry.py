@@ -12,7 +12,7 @@ if __name__ == "__main__":
     import sys
     import traceback
 
-    checks = {'--self-test', '--recording-self-test', '--recording-desktop-test', '--desktop-test'}
+    checks = {'--translation-self-test', '--self-test', '--recording-self-test', '--recording-desktop-test', '--desktop-test'}
     if checks.intersection(sys.argv[1:]):
         # Windowed Windows executables have no console. A failed synthetic test
         # must exit nonzero, rather than opening a traceback dialog and hanging CI.

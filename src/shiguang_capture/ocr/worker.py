@@ -14,6 +14,13 @@ def _serve(connection):
         while connection.poll(300):  # Release model memory after five idle minutes.
             image, mode, config = connection.recv()
             try:
+                if mode == 'translate_text':
+                    from .base import OCRResult
+                    from ..translate import translate_text
+                    result = OCRResult(image, None)
+                    translation = translate_text(image, config, allow_cloud=False)
+                    connection.send(('ok', (result, translation)))
+                    continue
                 started = time.perf_counter()
                 if backend is None:
                     backend = create_backend(config.ocr_engine)

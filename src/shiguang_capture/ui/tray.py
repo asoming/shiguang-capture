@@ -27,7 +27,7 @@ class TrayIcon(QObject):
         self._tray = QSystemTrayIcon(make_icon(), self.parent())
         self._tray.setToolTip("拾光 Capture — F1 截图 / F2 取色 / F3 贴图")
         menu = QMenu()
-        menu.addAction("打开图片工作台", self.action_workspace.emit)
+        menu.addAction("打开拾光", self.action_workspace.emit)
         menu.addAction("打开图片…", self.action_open.emit)
         menu.addSeparator()
         menu.addAction("✂️ 区域截图 (F1)", self.action_capture.emit)

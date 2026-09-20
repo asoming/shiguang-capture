@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import json
 from PySide6.QtCore import Qt, Signal, QSaveFile, QIODevice, QMimeData
-from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut, QAction
 from PySide6.QtWidgets import (
-    QButtonGroup, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
+    QMenu, QButtonGroup, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem, QHeaderView,
 )
 from .canvas import ImageCanvas
@@ -15,6 +15,7 @@ from ..clipboard import write_text, write_image
 
 
 class ResultPanel(QWidget):
+    translate_requested = Signal(str)
     record_requested = Signal()
     format_changed = Signal(str, str)
     closed = Signal()
@@ -36,165 +37,133 @@ class ResultPanel(QWidget):
         self._kind = self._mode = 'ocr'
         self.setObjectName('workspace')
         self.setStyleSheet(STYLE)
-        self.setWindowTitle('拾光 Capture · 图片工作台')
-        self.resize(1160, 780)
-        self.setMinimumSize(900, 650)
+        self.setWindowTitle('拾光 · 识别')
+        self.resize(1080, 700)
+        self.setMinimumSize(680, 400)
         self.setAcceptDrops(True)
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 22, 28, 20)
-        root.setSpacing(18)
-        heading = QHBoxLayout()
-        self.head = QLabel('', self)
-        self.head.hide()
-        self.meta = QLabel('', objectName='muted')
-        self.meta.setWordWrap(True)
-        for label, signal in [('截图', self.capture_requested), ('录屏', self.record_requested), ('粘贴图片', self.paste_requested), ('打开图片', self.open_requested)]:
-            button = QPushButton(label)
-            button.clicked.connect(signal.emit)
-            heading.addWidget(button)
-        heading.addStretch()
-        root.addLayout(heading)
-
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.splitter.setHandleWidth(18)
-        source = QFrame(objectName='paper')
-        source_layout = QVBoxLayout(source)
-        source_layout.setContentsMargins(14, 14, 14, 14)
-        source_header = QHBoxLayout()
-        source_header.addWidget(QLabel('原图与标注', objectName='section'))
-        source_header.addStretch()
-        self.dimensions = QLabel('尚未载入图片', objectName='muted')
-        source_header.addWidget(self.dimensions)
-        source_layout.addLayout(source_header)
-        tools = QHBoxLayout()
-        tools.setSpacing(4)
-        self.tool_group = QButtonGroup(self)
-        for tool, label in [('view','查看'), ('arrow','箭头'), ('rect','矩形'), ('pen','画笔'), ('text','文字'), ('redact','遮盖')]:
-            button = QPushButton(label)
-            button.setCheckable(True)
-            button.setChecked(tool == 'view')
-            button.setStyleSheet('padding:6px 8px;')
-            button.clicked.connect(lambda checked=False, value=tool: self._select_tool(value))
-            self.tool_group.addButton(button)
-            tools.addWidget(button)
-        source_layout.addLayout(tools)
+        self.splitter.setHandleWidth(8)
         self.canvas = ImageCanvas()
         self.canvas.changed.connect(self._invalidate)
-        source_layout.addWidget(self.canvas, 1)
-        edit_bar = QHBoxLayout()
-        for label, callback in [('撤销', self.canvas.undo), ('重做', self.canvas.redo)]:
-            button = QPushButton(label)
-            button.clicked.connect(callback)
-            edit_bar.addWidget(button)
-        edit_bar.addStretch()
-
-        source_layout.addLayout(edit_bar)
-        navigation = QHBoxLayout()
-        self.block_combo = QComboBox()
-        self.block_combo.setMinimumWidth(160)
-        self.block_combo.addItem('文字块定位 · 识别后可用')
-        self.block_combo.currentIndexChanged.connect(self._locate_block)
-        navigation.addWidget(self.block_combo, 1)
-        for label, callback in [('适应', lambda: self.canvas.set_zoom(1)), ('100%', lambda: self.canvas.actual_size())]:
-            button = QPushButton(label)
-            button.clicked.connect(callback)
-            navigation.addWidget(button)
-        source_layout.addLayout(navigation)
-        self.splitter.addWidget(source)
-
-        text_card = QFrame(objectName='paper')
-        text_layout = QVBoxLayout(text_card)
-        text_layout.setContentsMargins(14, 14, 14, 14)
-        text_header = QHBoxLayout()
-        text_header.addWidget(QLabel('识别与校对', objectName='section'))
-        text_header.addStretch()
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItem('提取文字', 'ocr')
-        self.mode_combo.addItem('代码 / 日志', 'code')
-        self.mode_combo.addItem('简单表格', 'table')
-        self.mode_combo.addItem('离线翻译 · 实验', 'translate')
-        text_header.addWidget(self.mode_combo)
-        self.retry_btn = QPushButton('开始识别', objectName='primary')
-        self.retry_btn.clicked.connect(self._retry)
-        text_header.addWidget(self.retry_btn)
-        text_layout.addLayout(text_header)
+        self.canvas.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.canvas.customContextMenuRequested.connect(self._image_menu)
+        self.splitter.addWidget(self.canvas)
+        result_side = QWidget()
+        text_layout = QVBoxLayout(result_side)
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        header = QHBoxLayout()
+        header.addStretch()
+        self.translate_button = QPushButton('翻译')
+        self.translate_button.clicked.connect(self._translate)
+        header.addWidget(self.translate_button)
+        text_layout.addLayout(header)
+        self.comparison = QSplitter(Qt.Orientation.Vertical)
+        self.comparison.setHandleWidth(8)
+        original = QWidget()
+        original_layout = QVBoxLayout(original)
+        original_layout.setContentsMargins(0, 0, 0, 0)
         self.source_edit = QPlainTextEdit()
-        self.source_edit.setPlaceholderText('识别结果')
+        self.source_edit.setPlaceholderText('正在识别…')
         self.source_edit.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.source_edit.customContextMenuRequested.connect(self._text_menu)
-        text_layout.addWidget(self.source_edit, 1)
+        original_layout.addWidget(self.source_edit)
         self.table_grid = QTableWidget()
         self.table_grid.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table_grid.horizontalHeader().setDefaultSectionSize(120)
         self.table_grid.setAlternatingRowColors(True)
-        self.table_grid.setStyleSheet("QTableWidget {background:white; alternate-background-color:#F0F6F8; gridline-color:#D5E1E9;} QHeaderView::section {background:#E0F0EF; padding:7px; border:0;}")
         self.table_grid.currentCellChanged.connect(self._locate_cell)
         self.table_grid.itemChanged.connect(self._table_edited)
-        text_layout.addWidget(self.table_grid, 1)
+        self.table_grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table_grid.customContextMenuRequested.connect(lambda pos: self._text_menu(pos, self.table_grid))
+        original_layout.addWidget(self.table_grid)
         self.table_grid.hide()
+        self.comparison.addWidget(original)
         self.right = QWidget()
-        translation_layout = QVBoxLayout(self.right)
-        translation_layout.setContentsMargins(0, 0, 0, 0)
-        translation_layout.addWidget(QLabel('译文 · 请核对词典模式的完整性', objectName='muted'))
+        translated = QVBoxLayout(self.right)
+        translated.setContentsMargins(0, 0, 0, 0)
         self.target_edit = QPlainTextEdit()
-        translation_layout.addWidget(self.target_edit)
-        text_layout.addWidget(self.right, 1)
-        format_row = QHBoxLayout()
-        format_row.addWidget(QLabel('复制格式', objectName='muted'))
-        self.output_format = QComboBox()
-        self.output_format.addItem('纯文本', 'text')
-        self.output_format.currentIndexChanged.connect(self._format_changed)
-        format_row.addWidget(self.output_format, 1)
-        text_layout.addLayout(format_row)
-        actions = QHBoxLayout()
-        self.restore_btn = QPushButton('恢复原输出')
-        self.restore_btn.clicked.connect(self._restore)
-        self.copy_source = QPushButton('复制文字', objectName='primary')
-        self.copy_source.clicked.connect(self._copy_source)
-        self.copy_target = QPushButton('复制译文')
-        self.copy_target.clicked.connect(self._copy_target)
-        self.swap_btn = QPushButton('交换')
-        self.swap_btn.clicked.connect(self._swap)
-        self.save_text_btn = QPushButton('导出文本')
-        self.save_text_btn.clicked.connect(self._save_text)
-        for button in (self.restore_btn, self.save_text_btn, self.copy_source, self.copy_target, self.swap_btn):
-            actions.addWidget(button)
-        text_layout.addLayout(actions)
-        self.splitter.addWidget(text_card)
+        self.target_edit.setPlaceholderText('译文')
+        translated.addWidget(self.target_edit)
+        self.comparison.addWidget(self.right)
+        text_layout.addWidget(self.comparison, 1)
+        self.splitter.addWidget(result_side)
         self.splitter.setSizes([540, 520])
         root.addWidget(self.splitter, 1)
-
-        footer = QHBoxLayout()
-        self.gloss = QLabel('', objectName='muted')
-        self.gloss.setWordWrap(True)
-        status = QVBoxLayout()
-        status.addWidget(self.meta)
-        status.addWidget(self.gloss)
-        footer.addLayout(status, 1)
-        self.cancel_btn = QPushButton('取消识别')
-        self.cancel_btn.clicked.connect(self.cancel_requested.emit)
-        self.cancel_btn.hide()
-        footer.addWidget(self.cancel_btn)
-        self.copy_image_btn = QPushButton('复制图片')
-        self.copy_image_btn.clicked.connect(self._copy_image)
-        self.pin_btn = QPushButton('贴到桌面')
-        self.pin_btn.clicked.connect(lambda: self.pin_requested.emit(self.canvas.rendered_image()))
-        self.save_image_btn = QPushButton('保存图片')
-        self.save_image_btn.clicked.connect(lambda: self.save_image_requested.emit(self.canvas.rendered_image()))
-        self.close_btn = QPushButton('清空会话')
-        self.close_btn.clicked.connect(self.clear_session)
-        for button in (self.copy_image_btn, self.pin_btn, self.save_image_btn, self.close_btn):
-            footer.addWidget(button)
-        root.addLayout(footer)
-        self.source_edit.textChanged.connect(self._update_actions)
+        # Format and block state live in context menus, leaving only the two panes.
+        self.mode_combo, self.output_format, self.block_combo = (QComboBox(self) for _ in range(3))
+        for title, value in [('文字', 'ocr'), ('代码', 'code'), ('表格', 'table')]:
+            self.mode_combo.addItem(title, value)
+        for combo in (self.mode_combo, self.output_format, self.block_combo):
+            combo.hide()
+        self.output_format.currentIndexChanged.connect(self._format_changed)
+        self.block_combo.currentIndexChanged.connect(self._locate_block)
+        self.head, self.dimensions, self.meta, self.gloss = (QLabel(self) for _ in range(4))
+        for label in (self.head, self.dimensions, self.meta, self.gloss):
+            label.hide()
+        self.feedback = QLabel()
+        self.feedback.setWordWrap(True)
+        self.feedback.hide()
+        root.addWidget(self.feedback)
+        actions = [
+            ('retry_btn', '重新识别', self._retry),
+            ('restore_btn', '恢复原输出', self._restore),
+            ('copy_source', '复制识别内容', self._copy_source),
+            ('copy_target', '复制译文', self._copy_target),
+            ('swap_btn', '交换原文和译文', self._swap),
+            ('save_text_btn', '导出文本', self._save_text),
+            ('cancel_btn', '取消识别', self.cancel_requested.emit),
+            ('copy_image_btn', '复制图片', self._copy_image),
+            ('pin_btn', '贴到桌面', lambda: self.pin_requested.emit(self.canvas.image)),
+            ('save_image_btn', '保存图片', lambda: self.save_image_requested.emit(self.canvas.image)),
+            ('close_btn', '清空会话', self.clear_session),
+        ]
+        for name, title, callback in actions:
+            action = QAction(title, self)
+            action.triggered.connect(callback)
+            setattr(self, name, action)
+        self.source_edit.textChanged.connect(self._source_changed)
         self.target_edit.textChanged.connect(self._update_actions)
-        for key, callback in [('Ctrl+Z', self.canvas.undo), ('Ctrl+Shift+Z', self.canvas.redo)]:
-            shortcut = QShortcut(QKeySequence(key), self.canvas)
-            shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
-            shortcut.activated.connect(callback)
-        self.canvas.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        QShortcut(QKeySequence('Ctrl+S'), self, activated=self._save_text)
+        QShortcut(QKeySequence('Escape'), self, activated=self.cancel_requested.emit)
+        self._busy = False
         self._apply_mode('ocr')
         self._update_actions()
+
+    def _source_changed(self):
+        if self._translation and self.source_edit.toPlainText() != self._translation.source_text:
+            self._translation = None
+            self.target_edit.clear()
+            self.target_edit.setPlaceholderText('原文已修改，点击翻译更新')
+        self._update_actions()
+
+    def show_error(self, message):
+        self.gloss.setText(message)
+        self.feedback.setText(message)
+        self.feedback.show()
+
+    def _translate(self):
+        text = self.source_edit.toPlainText()
+        if text.strip() and not self._busy:
+            self.right.show()
+            self.target_edit.clear()
+            self.target_edit.setPlaceholderText('正在翻译…')
+            self.comparison.setSizes([300, 300])
+            self.translate_requested.emit(text)
+
+    def _image_menu(self, position):
+        menu = QMenu(self)
+        for action in (self.copy_image_btn, self.save_image_btn, self.pin_btn):
+            menu.addAction(action)
+        menu.addSeparator()
+        menu.addAction('适应窗口', lambda: self.canvas.set_zoom(1))
+        menu.addAction('原始大小', self.canvas.actual_size)
+        blocks = menu.addMenu('定位文字块')
+        for index in range(1, self.block_combo.count()):
+            blocks.addAction(self.block_combo.itemText(index), lambda i=index: self._locate_block(i))
+        menu.exec(self.canvas.mapToGlobal(position))
 
     def _select_tool(self, tool):
         self.canvas.tool = tool
@@ -205,6 +174,7 @@ class ResultPanel(QWidget):
         for button in (self.retry_btn, self.copy_image_btn, self.pin_btn, self.save_image_btn):
             button.setEnabled(has_image)
         has_text = bool(self.source_edit.toPlainText()) or bool(self._result and self._result.table)
+        self.translate_button.setEnabled(has_text and not getattr(self, "_busy", False))
         self.copy_source.setEnabled(has_text)
         self.save_text_btn.setEnabled(has_text)
         self.copy_target.setEnabled(bool(self.target_edit.toPlainText()))
@@ -228,6 +198,8 @@ class ResultPanel(QWidget):
         self._update_actions()
 
     def set_image(self, image):
+        self.feedback.hide()
+        self.right.hide()
         self._image = image
         self.canvas.set_image(image)
         self._invalidate()
@@ -258,12 +230,18 @@ class ResultPanel(QWidget):
         self._update_actions()
 
     def show_translation(self, result, translation):
-        self.show_result('translate', result)
+        if self._result is None or self.source_edit.toPlainText() != result.text:
+            self.show_result(result.mode if result.mode in ('ocr', 'code', 'table') else 'ocr', result)
+        self.feedback.hide()
         self._translation = translation
         self.target_edit.setPlainText(translation.target_text)
-        self._apply_mode('translate')
+        self.right.show()
+        self.target_edit.setPlaceholderText('译文')
+        self.comparison.setSizes([300, 300])
         self.gloss.setText('词典替换模式：仅替换已知术语，不是完整译文。' if translation.degraded
                            else '本地翻译完成，请校对后复制。')
+        if translation.degraded:
+            self.show_error('尚未安装离线翻译模型；下面仅为词典替换，不是完整译文。')
         self._update_actions()
 
     def _apply_mode(self, mode):
@@ -300,6 +278,9 @@ class ResultPanel(QWidget):
         return json.dumps(document, ensure_ascii=False, indent=2)
 
     def set_busy(self, busy):
+        self._busy = busy
+        self.translate_button.setText('处理中…' if busy else '翻译')
+        self._update_actions()
         self.cancel_btn.setVisible(busy)
         self.retry_btn.setText('重新开始' if busy else ('重新识别' if self._result else '开始识别'))
         if busy:
@@ -356,13 +337,29 @@ class ResultPanel(QWidget):
             if self._translation:
                 self.target_edit.setPlainText(self._translation.target_text)
 
-    def _text_menu(self, position):
-        menu = self.source_edit.createStandardContextMenu()
+    def _text_menu(self, position, widget=None):
+        widget = widget or self.source_edit
+        menu = self.source_edit.createStandardContextMenu() if widget is self.source_edit else QMenu(self)
+        menu.addSeparator()
+        for action in (self.copy_source, self.save_text_btn, self.restore_btn):
+            menu.addAction(action)
+        formats = menu.addMenu('复制格式')
+        for index in range(self.output_format.count()):
+            action = formats.addAction(self.output_format.itemText(index))
+            action.setCheckable(True)
+            action.setChecked(index == self.output_format.currentIndex())
+            action.triggered.connect(lambda checked=False, i=index: self.output_format.setCurrentIndex(i))
         menu.addSeparator()
         clean = menu.addAction('清理选中文字…')
         clean.setEnabled(self.source_edit.textCursor().hasSelection())
-        if menu.exec(self.source_edit.mapToGlobal(position)) == clean:
-            self._clean_selected_text()
+        clean.triggered.connect(self._clean_selected_text)
+        menu.addAction(self.retry_btn)
+        if self._busy:
+            menu.addAction(self.cancel_btn)
+        if self.right.isVisible():
+            menu.addAction('切换左右 / 上下对照', lambda: self.comparison.setOrientation(
+                Qt.Orientation.Horizontal if self.comparison.orientation() == Qt.Orientation.Vertical else Qt.Orientation.Vertical))
+        menu.exec(widget.mapToGlobal(position))
 
     def _clean_selected_text(self):
         from .text_cleanup import CleanupDialog

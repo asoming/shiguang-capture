@@ -30,3 +30,6 @@ desktop.ini
 
 # 站点本地服务日志
 *.log
+
+# Verified models downloaded at build time
+src/shiguang_capture/translation_data/

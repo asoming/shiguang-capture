@@ -1,14 +1,15 @@
-# 拾光 Capture 1.4.0b1
+# 拾光 Capture 1.4.0
 
 本地屏幕捕获与图片校对工具。截图、导入、标注、提取文字，再由你决定复制或保存。
 
-**当前分支是 1.4.0b1 预览版，尚未通过三平台正式发布门槛。** 已有版本的正式范围仍为 1.3.0 Linux X11；其功能与安装说明保存在 [1.3.0 说明](validation/README-1.3.0.md)。下一版按用户 PRD 逐项记录实现、通过证据与缺口，见 [完整验收追踪](validation/PRD-ACCEPTANCE.md)。
+1.4.0 提供 Linux X11 x86_64、Windows x86_64 与 macOS arm64 安装包。
+本版重新整理截图、录屏和识别交互：截图就地标注，录屏使用三秒全屏倒计时与贴边浮球，识别窗口只保留图片、结果和翻译。中英离线模型随包提供，无需上传图片或文字。
 
-本轮新增选区内直接标注、独立录屏和中英文 PP-OCRv5 模型，移除了工作台和设置页的大标题及宣传文案。GitHub 上运行 Windows、macOS、Linux 原生桌面测试；通过的云端场景不替代物理多屏、实体麦克风、权限拒绝、签名安装或 Excel 实测。
+发布范围为下述已实现功能；不宣称 PRD 全量验收通过。[逐项验收记录](validation/PRD-ACCEPTANCE.md)保留通过、失败及未验证项。macOS 原生采集帧率限制按用户指定不再作为本次发布阻断项。
 
 ## 安装已发布稳定版
 
-在 [正式发布页](https://github.com/asoming/shiguang-capture/releases/tag/v1.3.0) 下载 Linux 压缩包与 SHA256SUMS，校验并解压，在解压目录运行：
+在 [正式发布页](https://github.com/asoming/shiguang-capture/releases/tag/v1.4.0) 下载 Linux 压缩包与 SHA256SUMS，校验并解压，在解压目录运行：
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
@@ -16,15 +17,17 @@ sha256sum -c SHA256SUMS --ignore-missing
 ./install-linux.sh
 ```
 
-桌面与应用菜单中会出现 **拾光 Capture**。也可直接运行目录内的 `ShiguangCapture`，无需 Python、联网下载模型或账号。首次运行无需联网。安装位置为 `~/.local/share/shiguang-capture/1.3.0`，启动器为 `~/.local/bin/shiguang-capture`。关闭工作台后驻留托盘；退出请用托盘菜单。
+桌面与应用菜单中会出现 **拾光 Capture**。也可直接运行目录内的 `ShiguangCapture`，无需 Python、联网下载模型或账号。首次运行无需联网。安装位置为 `~/.local/share/shiguang-capture/1.4.0`，启动器为 `~/.local/bin/shiguang-capture`。关闭主窗口后驻留托盘；退出请用托盘菜单。
+
+Windows：解压后运行 `ShiguangCapture.exe`，可运行 `install-windows.ps1` 创建桌面与开始菜单快捷方式。macOS：解压 `.app` 后移到应用程序目录；当前采用 ad-hoc 签名，未进行 Apple 公证。
 
 ## 功能
 
 - 区域／当前屏幕截图，区域操作使用同一份冻结快照，保留原生像素。
 - PNG/JPEG 打开、拖入、粘贴；原图与结果并排校对，缩放、拖动和文字块定位。
 - 拖选后直接用浮动工具条标注、复制、保存、贴图或识别；Enter/Ctrl+C 复制、Ctrl+S 保存、Ctrl+Z/Ctrl+Y 撤销重做，右键重选、Esc 退出。
-- 箭头、矩形、文字、画笔、实色遮盖；连续 20 步撤销重做有自动测试，导出合并标注。
-- 独立录屏面板：全屏、区域、窗口，3 秒倒计时，暂停/继续、停止保存 MP4，异常恢复；无声为默认，可明确选择麦克风、系统音源或混音。音源可用性依系统和设备而定。
+- 箭头、矩形、文字、画笔、实色遮盖；已确认的文字可再次点击修改；连续 20 步撤销重做有自动测试，导出合并标注。
+- 独立录屏面板：全屏、区域、窗口，全屏 3 秒动效倒计时，可拖动浮球控制，贴边蓝色半圆收起，暂停/继续、停止保存 MP4，异常恢复；无声为默认，可明确选择麦克风、系统音源或混音。音源可用性依系统和设备而定。
 - 图像修改立即取消旧识别、清除旧文字，重新识别当前可见内容。
 - 中英文 RapidOCR，独立进程、串行任务、取消／60 秒超时恢复，空闲五分钟释放模型。
 - 文字／代码日志／简单表格模式。代码仅按可见位置恢复缩进，不补写、不执行。
@@ -55,7 +58,7 @@ OCR 会有识别错误，置信度也不是正确率。代码符号、缩进、�
 
 ## 实验与未覆盖范围
 
-滚动长截图仅适用于受限静态内容，匹配失败保留已有部分；上限 64 百万像素／单边 32,767。翻译为可选实验功能；正式包未附带 Argos 模型，界面明确显示词典替换降级，不能当作完整译文。复杂表格、合并单元格、窗口截图和云端服务未实现。窗口录屏已提供；同名窗口无法可靠区分时会要求改用区域录屏，窗口尺寸变化会停止并保留恢复文件。macOS 系统声音尚未通过验收。
+滚动长截图仅适用于受限静态内容，匹配失败保留已有部分；上限 64 百万像素／单边 32,767。中英 OPUS-MT 离线翻译随包提供；识别后点击翻译可上下对照，右键切换左右对照。翻译使用校对后的文字；导出、格式和清理选区放在结果右键菜单中。复杂表格、合并单元格、窗口截图和云端服务未实现。窗口录屏已提供；同名窗口无法可靠区分时会要求改用区域录屏，窗口尺寸变化会停止并保留恢复文件。macOS 系统声音尚未通过验收，云端原生录屏测试帧率低于验收目标；具体记录见验收文档。
 
 单屏 X11 截图和快捷键已实机验证。多屏与混合 DPI 的坐标合成经过自动化验证，尚无多物理屏幕验收证据。跨屏采用最高 DPR 输出，低 DPI 部分会重采样。没有 Windows/macOS 签名、权限恢复及安装实机验收证据。
 
@@ -79,10 +82,12 @@ python scripts/validate_quality.py
 python scripts/validate_x11.py # 真实 X11 合成窗口，需要桌面会话
 python scripts/check_site.py
 # 打包需系统 libxcb-cursor0；可用 SHIGUANG_XCB_CURSOR 指定解压的库文件
+python scripts/build_translation_models.py
+python -m shiguang_capture --translation-self-test
 python scripts/build_exe.py
 ```
 
-`--self-test` 强制离屏，使用合成图片验证模型、子进程、结构化输出和剪贴板保护。`--check` 只检查基础环境，不能代替完整自测。生成质量样本需系统 Noto CJK 与 DejaVu 字体。其他平台开发可使用 `pip install -e '.[gui,ocr,record,dev]'`，构建成功不代表实机验收。
+`--self-test` 强制离屏，使用合成图片验证模型、子进程、结构化输出和剪贴板保护。`--check` 只检查基础环境，不能代替完整自测。生成质量样本需系统 Noto CJK 与 DejaVu 字体。其他平台开发可使用 `pip install -e '.[gui,ocr,record,offline,dev]'`，构建成功不代表实机验收。
 
 ## 卸载和反馈
 

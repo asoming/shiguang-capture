@@ -1,9 +1,10 @@
 """Image annotation canvas. All output is flattened from the visible edits."""
 from __future__ import annotations
 from dataclasses import dataclass
+from copy import deepcopy
 import math
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QInputDialog, QWidget
 
 
@@ -26,7 +27,8 @@ class ImageCanvas(QWidget):
         self.color = '#DA704C'
         self.line_width = 0
         self.marks: list[Mark] = []
-        self.undone: list[Mark] = []
+        self.undone: list[list[Mark]] = []
+        self.history: list[list[Mark]] = []
         self.draft = None
         self.highlight = None
         self.zoom = 1.0
@@ -40,6 +42,7 @@ class ImageCanvas(QWidget):
         self.image.setDevicePixelRatio(1)
         self.marks.clear()
         self.undone.clear()
+        self.history.clear()
         self.draft = None
         self.highlight = None
         self.zoom = 1.0
@@ -91,6 +94,11 @@ class ImageCanvas(QWidget):
                 painter.setFont(font)
                 painter.drawText(a, mark.text)
 
+    def text_bounds(self, mark):
+        font = QFont('Noto Sans CJK SC')
+        font.setPixelSize(max(18, round(max(2, self.image.width()/450)*7)))
+        return QFontMetricsF(font).boundingRect(mark.text).translated(mark.points[0]).adjusted(-5, -5, 5, 5)
+
     def rendered_image(self):
         result = self.image.copy()
         if not result.isNull():
@@ -102,11 +110,8 @@ class ImageCanvas(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor('#E5EDF3'))
-        painter.setPen(QColor('#D4E0E8'))
-        for x in range(0, self.width(), 20):
-            for y in range(0, self.height(), 20):
-                painter.drawPoint(x, y)
+        painter.fillRect(self.rect(), QColor('#F3F6FA'))
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         target = self.image_rect()
         if self.image.isNull():
             painter.setPen(QColor('#657D8E'))
@@ -128,6 +133,21 @@ class ImageCanvas(QWidget):
         painter.drawRect(target)
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.tool in ('view', 'text') and not self.image.isNull():
+            point = self.point_on_image(event.position())
+            for index in range(len(self.marks)-1, -1, -1):
+                mark = self.marks[index]
+                if mark.tool == 'text' and self.text_bounds(mark).contains(point):
+                    text, accepted = QInputDialog.getText(self, '修改文字', '标注文字', text=mark.text)
+                    if accepted and text != mark.text:
+                        self.checkpoint()
+                        if text:
+                            self.marks[index].text = text
+                        else:
+                            self.marks.pop(index)
+                        self.changed.emit()
+                        self.update()
+                    return
         if event.button() == Qt.MouseButton.LeftButton and self.tool == 'view':
             self._pan_origin = event.position()
             return
@@ -139,6 +159,7 @@ class ImageCanvas(QWidget):
         if self.tool == 'text':
             text, ok = QInputDialog.getText(self, '添加文字', '标注文字')
             if ok and text.strip():
+                self.checkpoint()
                 self.marks.append(Mark('text', [point], text, self.color, self.line_width))
                 self.undone.clear()
                 self.changed.emit()
@@ -163,21 +184,28 @@ class ImageCanvas(QWidget):
         self._pan_origin = None
         if self.draft and event.button() == Qt.MouseButton.LeftButton:
             if self.draft.points[0] != self.draft.points[-1]:
+                self.checkpoint()
                 self.marks.append(self.draft)
                 self.undone.clear()
                 self.changed.emit()
             self.draft = None
             self.update()
 
+    def checkpoint(self):
+        self.history.append(deepcopy(self.marks))
+        self.undone.clear()
+
     def undo(self):
-        if self.marks:
-            self.undone.append(self.marks.pop())
+        if self.history:
+            self.undone.append(deepcopy(self.marks))
+            self.marks = self.history.pop()
             self.changed.emit()
             self.update()
 
     def redo(self):
         if self.undone:
-            self.marks.append(self.undone.pop())
+            self.history.append(deepcopy(self.marks))
+            self.marks = self.undone.pop()
             self.changed.emit()
             self.update()
 

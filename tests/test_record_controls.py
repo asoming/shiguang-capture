@@ -65,3 +65,36 @@ def test_dead_worker_restores_controls_and_keeps_recovery_path(panel):
     assert panel.state == 'idle' and panel.process is None
     assert 'saved.sgc-recovery.mkv' in panel.status.text()
     assert panel.fields.isEnabled()
+
+
+def test_countdown_escape_cancels_fullscreen_overlay(panel):
+    panel.toggle()
+    assert panel.countdown_overlay.isVisible()
+    assert not panel.isVisible()
+    QTest.keyClick(panel.countdown_overlay, Qt.Key.Key_Escape)
+    assert panel.state == 'idle' and panel.process is None
+    assert not panel.countdown_overlay.isVisible()
+    assert panel.isVisible()
+
+
+def test_orb_expands_contextual_controls_and_docks(panel):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QGuiApplication
+    orb = panel.bar
+    orb.show()
+    panel._event({'type': 'recording'})
+    QTest.mouseClick(orb, Qt.MouseButton.LeftButton, pos=QPoint(32, 32))
+    assert orb.expanded and orb.pause.isEnabled() and not orb.play.isEnabled()
+    panel._event({'type': 'paused'})
+    assert orb.play.isEnabled() and not orb.pause.isEnabled()
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    orb.move(area.left(), area.top()+80)
+    orb.dock_if_near_edge()
+    assert orb.docked == 'left' and orb.width() == 32 and not orb.expanded
+    QTest.mouseClick(orb, Qt.MouseButton.LeftButton, pos=QPoint(12, 32))
+    assert orb.expanded and orb.docked is None and orb.x() >= area.left()
+    orb.move(area.right()-orb.width()+1, area.top()+80)
+    orb.dock_if_near_edge()
+    assert orb.docked == 'right' and orb.geometry().right() == area.right()
+    panel._event({'type': 'saving'})
+    assert not orb.play.isEnabled() and not orb.pause.isEnabled() and not orb.stop_button.isEnabled()

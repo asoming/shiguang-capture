@@ -13,14 +13,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, Q
 
 from ..recording.worker import RecordingOptions, record, probe_audio, probe_windows
 from .theme import STYLE
-
-
-class RecordingBar(QWidget):
-    stop_requested = Signal()
-
-    def closeEvent(self, event):
-        self.stop_requested.emit()
-        event.ignore()  # Keep the indicator visible until the recorder stops.
+from .record_overlay import CountdownOverlay, RecordingOrb
+from .tool_icons import tool_icon
 
 
 class RecordPanel(QWidget):
@@ -31,8 +25,14 @@ class RecordPanel(QWidget):
         super().__init__()
         self.setWindowTitle('拾光 · 录屏')
         self.setObjectName('workspace')
-        self.setStyleSheet(STYLE)
-        self.setMinimumWidth(420)
+        self.setStyleSheet(STYLE + """
+            QWidget#workspace {background:#FFFFFF;}
+            QPushButton#primary {background:#3188F5; border:0; border-radius:28px; color:white;}
+            QPushButton#primary:hover {background:#2179E7;}
+            QComboBox, QLineEdit {background:#F7FAFF; border:1px solid #DCE7F4; padding:10px; border-radius:6px;}
+        """)
+        self.setMinimumSize(860, 490)
+        self.resize(960, 540)
         self.process = self.connection = None
         self.probe = self.probe_connection = None
         self.window_probe = self.window_connection = None
@@ -44,7 +44,12 @@ class RecordPanel(QWidget):
         self.countdown = 0
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(14)
+        layout.setSpacing(20)
+        header = QLabel('本地录制')
+        header.setStyleSheet('color:#3188F5; font-size:17px; font-weight:600; padding:8px 0;')
+        layout.addWidget(header)
+        content = QHBoxLayout()
+        content.setSpacing(28)
         self.fields = QWidget()
         form = QFormLayout(self.fields)
         self.form = form
@@ -90,18 +95,44 @@ class RecordPanel(QWidget):
         browse.clicked.connect(self._choose_folder)
         folder_row.addWidget(browse)
         form.addRow('保存位置', folder_row)
-        layout.addWidget(self.fields)
+        self.fields.setFixedWidth(360)
+        content.addWidget(self.fields)
+        preview_column = QVBoxLayout()
+        self.preview = QLabel('选择录制范围')
+        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview.setMinimumSize(380, 250)
+        self.preview.setStyleSheet('background:#152337; color:#AABDD5; border-radius:10px;')
+        self.preview_image = None
+        preview_column.addWidget(self.preview, 1)
+        refresh = QPushButton('刷新预览')
+        refresh.clicked.connect(self.refresh_preview)
+        preview_column.addWidget(refresh, 0, Qt.AlignmentFlag.AlignRight)
+        content.addLayout(preview_column, 1)
+        layout.addLayout(content, 1)
         self.status = QLabel('')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         buttons = QHBoxLayout()
-        self.start_button = QPushButton('开始录制', objectName='primary')
+        self.start_button = QPushButton('', objectName='primary')
+        self.start_button.setIcon(tool_icon('play', '#FFFFFF'))
+        self.start_button.setFixedSize(64, 64)
+        self.start_button.setStyleSheet('QPushButton {background:#3188F5;border:0;border-radius:32px;padding:0;} QPushButton:hover {background:#2179E7;} QPushButton:disabled {background:#B8D5FA;}')
+        self.start_button.setToolTip('开始录制 F6')
+        self.start_button.setAccessibleName('开始录制')
         self.start_button.clicked.connect(self.toggle)
-        self.stop_button = QPushButton('停止并保存')
+        self.stop_button = QPushButton('')
+        self.stop_button.setIcon(tool_icon('stop', '#3188F5'))
+        self.stop_button.setToolTip('停止并保存 F7')
+        self.stop_button.setFixedSize(48, 48)
         self.stop_button.clicked.connect(self.stop)
         self.stop_button.setEnabled(False)
         buttons.addWidget(self.start_button)
         buttons.addWidget(self.stop_button)
+        buttons.addSpacing(26)
+        self.elapsed = QLabel('00:00:00')
+        self.elapsed.setStyleSheet('font-family: "DejaVu Sans Mono"; font-size:38px; color:#3188F5;')
+        buttons.addWidget(self.elapsed)
+        buttons.addStretch()
         layout.addLayout(buttons)
         footer = QHBoxLayout()
         recover = QPushButton('恢复录制…')
@@ -109,29 +140,62 @@ class RecordPanel(QWidget):
         self.open_button = QPushButton('打开视频')
         self.open_button.setEnabled(False)
         self.open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_path))))
+        footer.addStretch()
         footer.addWidget(recover)
         footer.addWidget(self.open_button)
         layout.addLayout(footer)
         self.recover_button = recover
 
-        self.bar = RecordingBar(None, Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
+        self.bar = RecordingOrb()
         self.bar.stop_requested.connect(self.stop)
-        self.bar.setWindowTitle('拾光 · 录制中')
-        self.bar.setStyleSheet(STYLE)
-        row = QHBoxLayout(self.bar)
-        self.clock = QLabel('● 00:00')
-        self.clock.setStyleSheet('color:#B83737;font-weight:bold;')
-        row.addWidget(self.clock)
-        self.pause_button = QPushButton('暂停')
-        self.pause_button.clicked.connect(self.toggle)
-        row.addWidget(self.pause_button)
-        stop = QPushButton('停止')
-        stop.clicked.connect(self.stop)
-        row.addWidget(stop)
+        self.bar.toggle_requested.connect(self.toggle)
+        self.clock = self.bar.clock
+        self.pause_button = self.bar.pause
+        self.countdown_overlay = CountdownOverlay()
+        self.countdown_overlay.cancelled.connect(self.stop)
+        self.destroyed.connect(self.countdown_overlay.deleteLater)
+        self.destroyed.connect(self.bar.deleteLater)
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self._poll)
         self.timer.start()
+
+    def refresh_preview(self):
+        if self.active:
+            return
+        self.hide()
+        QTimer.singleShot(160, self._capture_preview)
+
+    def _capture_preview(self):
+        if self.active:
+            return
+        screen = next((s for s in QGuiApplication.screens() if s.name() == self.screen.currentData()), QGuiApplication.primaryScreen())
+        if self.window_title:
+            self.preview_image = None
+            self.preview.setText('窗口 · '+self.window_title)
+            self.show()
+            return
+        if screen:
+            pixmap = screen.grabWindow(0)
+            if self.region:
+                x, y, w, h = self.region
+                density = pixmap.devicePixelRatio()
+                pixmap = pixmap.copy(round((x-screen.geometry().x())*density),
+                                     round((y-screen.geometry().y())*density), round(w*density), round(h*density))
+            self.preview_image = pixmap
+            self._fit_preview()
+        self.show()
+
+    def _fit_preview(self):
+        if self.preview_image and not self.preview_image.isNull():
+            target = self.preview.size()*self.devicePixelRatioF()
+            scaled = self.preview_image.scaled(target, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            scaled.setDevicePixelRatio(self.devicePixelRatioF())
+            self.preview.setPixmap(scaled)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit_preview()
 
     @property
     def active(self):
@@ -141,6 +205,10 @@ class RecordPanel(QWidget):
         self.region = None
         self.window_title = None
         self.region_button.setText('选择区域…')
+        if hasattr(self, 'preview'):
+            self.preview.clear()
+            self.preview.setText('刷新预览')
+            self.preview_image = None
 
     def _choose_window(self):
         if self.window_probe:
@@ -208,10 +276,15 @@ class RecordPanel(QWidget):
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
             self.stop_button.setText('取消')
+            self.elapsed.setText('00:00:00')
             self.countdown = time.monotonic() + 3
-            self.status.setText('3 秒后开始录制')
+            self.status.clear()
+            screen = next((s for s in QGuiApplication.screens() if s.name() == self.screen.currentData()), QGuiApplication.primaryScreen())
+            self.hide()
+            self.countdown_overlay.begin(screen, self.countdown)
 
     def _start(self):
+        self.countdown_overlay.hide()
         mode = self.audio.currentData()
         target = Path(self.folder.text()).expanduser()/f'录屏_{datetime.now():%Y%m%d_%H%M%S}.mp4'
         options = RecordingOptions(str(target), self.screen.currentData(), self.region, self.fps.currentData(),
@@ -234,10 +307,13 @@ class RecordPanel(QWidget):
         self.state = 'starting'
         self.started_deadline = time.monotonic() + 25
         self.recovery = None
-        self.stop_button.setText('停止并保存')
+        self.stop_button.setToolTip('停止并保存 F7')
+        self.stop_button.setText('')
         self.pause_button.setEnabled(False)
         self.clock.setText('● 准备中')
         self.hide()
+        self.bar.set_state('starting')
+        self.bar.set_expanded(False)
         self.bar.show()
 
     def stop(self):
@@ -248,6 +324,7 @@ class RecordPanel(QWidget):
             try:
                 self.connection.send('stop')
                 self.state = 'saving'
+                self.bar.set_state('saving')
                 self.pause_button.setEnabled(False)
                 self.clock.setText('正在保存…')
                 self.stop_button.setEnabled(False)
@@ -259,10 +336,13 @@ class RecordPanel(QWidget):
         self.fields.setEnabled(True)
         self.recover_button.setEnabled(True)
         self.start_button.setEnabled(True)
-        self.start_button.setText('开始录制')
+        self.start_button.setText('')
+        self.start_button.setIcon(tool_icon('play', '#FFFFFF'))
         self.stop_button.setEnabled(False)
-        self.stop_button.setText('停止并保存')
+        self.stop_button.setToolTip('停止并保存 F7')
+        self.stop_button.setText('')
         self.bar.hide()
+        self.countdown_overlay.hide()
         self.open_button.setEnabled(self.last_path is not None)
         self.show()
         self.idle.emit()
@@ -348,18 +428,20 @@ class RecordPanel(QWidget):
             if self.state == 'saving':
                 return
             self.state = kind
+            self.bar.set_state(kind)
             self.start_button.setEnabled(True)
-            self.pause_button.setEnabled(True)
             text = '继续' if kind == 'paused' else '暂停'
-            self.start_button.setText(text)
-            self.pause_button.setText(text)
+            self.start_button.setToolTip(text+' F6')
+            self.start_button.setIcon(tool_icon('play' if kind == 'paused' else 'pause', '#FFFFFF'))
             if kind == 'paused':
                 self.clock.setText('Ⅱ 已暂停')
         elif kind == 'progress':
             seconds = int(event['seconds'])
-            self.clock.setText(f'● {seconds//60:02d}:{seconds%60:02d}')
+            self.clock.setText(f'{seconds//3600:02d}:{seconds//60%60:02d}:{seconds%60:02d}')
+            self.elapsed.setText(self.clock.text())
         elif kind == 'saving':
             self.state = 'saving'
+            self.bar.set_state('saving')
             self.clock.setText('正在保存…')
         elif kind == 'finished':
             self.last_path = Path(event['path'])

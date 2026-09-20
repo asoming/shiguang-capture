@@ -52,6 +52,9 @@ def main() -> int:
         print("需要 pyinstaller：pip install pyinstaller")
         return 1
 
+    from shiguang_capture.offline_translation import available
+    if not available():
+        raise RuntimeError('先运行 scripts/build_translation_models.py，正式包必须包含离线翻译模型。')
     icon = ROOT / "docs/assets/icon.ico"
     args = [
         str(ROOT / "scripts/app_entry.py"),
@@ -67,6 +70,10 @@ def main() -> int:
         "--collect-data", "shiguang_capture",
         "--collect-all", "av",
         "--collect-all", "soundcard",
+        "--collect-all", "ctranslate2",
+        "--collect-all", "sentencepiece",
+        "--exclude-module", "torch",
+        "--exclude-module", "transformers",
         "--workpath", str(ROOT / "build/pyinstaller"),
         "--specpath", str(ROOT / "build"),
         "--distpath", str(ROOT / "dist"),
@@ -133,6 +140,8 @@ def main() -> int:
     for name in ('LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md'):
         shutil.copy2(ROOT / name, bundle / name)
     shutil.copy2(ROOT / 'docs/assets/icon-256.png', bundle / 'icon.png')
+    if sys.platform == 'win32':
+        shutil.copy2(ROOT/'scripts/install-windows.ps1', bundle/'install-windows.ps1')
     if sys.platform.startswith('linux'):
         shutil.copy2(ROOT / 'scripts/install-linux.sh', bundle / 'install-linux.sh')
     if sys.platform == 'darwin':

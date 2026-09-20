@@ -1,6 +1,6 @@
 """Small vector tools with readable accessible names supplied by their buttons."""
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap, QPolygonF
 
 
 def tool_icon(name, color='#263D4C'):
@@ -9,7 +9,15 @@ def tool_icon(name, color='#263D4C'):
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setPen(QPen(QColor(color), 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-    if name == 'rect':
+    if name == 'play':
+        painter.setBrush(QColor(color))
+        painter.drawPolygon(QPolygonF([QPointF(7, 4), QPointF(20, 12), QPointF(7, 20)]))
+    elif name == 'pause':
+        painter.fillRect(QRectF(6, 5, 4, 14), QColor(color))
+        painter.fillRect(QRectF(14, 5, 4, 14), QColor(color))
+    elif name == 'stop':
+        painter.fillRect(QRectF(5, 5, 14, 14), QColor(color))
+    elif name == 'rect':
         painter.drawRect(QRectF(4, 5, 16, 14))
     elif name == 'arrow':
         painter.drawLine(4, 20, 19, 5)

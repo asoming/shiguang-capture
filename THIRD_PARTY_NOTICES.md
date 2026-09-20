@@ -71,3 +71,15 @@ The Python runtime license is included as Python-LICENSE.txt.
 Development tests may install PyAV's general-purpose wheel. It is not the encoder
 runtime used in the Linux binary package. Test-wheel provenance is not a statement
 that Windows/macOS binary distribution has completed release review.
+
+### Bundled offline translation (1.4.0)
+
+The English–Chinese and Chinese–English OPUS-MT 1.9 models are redistributed
+from the [official Argos package index](https://github.com/argosopentech/argospm-index).
+Authors: Jörg Tiedemann and Santhosh Thottingal, “OPUS-MT — Building open translation
+services for the World”, EAMT 2020, Lisbon. The original models are licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Weights and tokenizers are unmodified; unused Stanza sentence-splitting files are
+omitted. Per-model attribution, download URLs and SHA-256 values are bundled in
+`shiguang_capture/translation_data`. Inference uses CTranslate2 (MIT) and
+SentencePiece (Apache-2.0); their notices are included in the dependency licenses.

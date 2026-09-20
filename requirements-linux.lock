@@ -36,3 +36,6 @@ six==1.17.0
 SoundCard==0.4.5
 sympy==1.14.0
 tqdm==4.70.1
+
+ctranslate2==4.6.0
+sentencepiece==0.2.1

@@ -34,7 +34,9 @@ jobs:
           path-type: inherit
           install: make nasm diffutils
       - name: Install build dependencies
-        run: pip install -e ".[gui,ocr,record,dev]" pyinstaller wheel "Cython>=3.1,<4"
+        run: pip install -e ".[gui,ocr,record,offline,dev]" pyinstaller wheel "Cython>=3.1,<4"
+      - name: Prepare verified offline translation models
+        run: python scripts/build_translation_models.py
       - name: Restore compiled media runtime
         uses: actions/cache/restore@v4
         id: media-cache
@@ -73,6 +75,7 @@ jobs:
           New-Item -ItemType Directory -Force 'artifacts/package-tests' | Out-Null
           $checks = @(
             @{ Name = 'self-test'; Arguments = @('--self-test') },
+            @{ Name = 'translation-self-test'; Arguments = @('--translation-self-test') },
             @{ Name = 'recording-self-test'; Arguments = @('--recording-self-test') },
             @{ Name = 'native-recording'; Arguments = @('--recording-desktop-test', 'artifacts/package-native') }
           )
@@ -91,6 +94,7 @@ jobs:
       - name: Test standalone macOS application
         if: runner.os == 'macOS'
         run: |
+          dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --translation-self-test
           dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --self-test
           dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --recording-self-test
           tar -czf dist/ShiguangCapture-macOS-arm64-preview.tar.gz -C dist ShiguangCapture.app

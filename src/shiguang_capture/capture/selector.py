@@ -99,7 +99,7 @@ class RegionSelector(QWidget):
         self._active_handle: str | None = None
         self._move_offset: QPoint | None = None
         self._cursor: QPoint | None = None
-        self._snapshot: QImage | None = compose_region(self._frames, bounds, density=1)     # 全屏缓存快照
+        self._snapshot: QImage | None = compose_region(self._frames, bounds)     # 全屏缓存快照
 
         self._toolbar = _Toolbar(self, selection_only)
         self._toolbar.action_clicked.connect(self._on_action)
@@ -117,7 +117,7 @@ class RegionSelector(QWidget):
             self._snapshot = self._grab_full_snapshot()
 
     def _grab_full_snapshot(self) -> QImage:
-        return compose_region(self._frames, self._bounds, density=1)
+        return compose_region(self._frames, self._bounds)
 
     def selected_image(self, rect: Rect) -> QImage:
         if self._canvas_rect == rect and not self._canvas.image.isNull():
@@ -144,7 +144,8 @@ class RegionSelector(QWidget):
     def _sync_canvas(self, moved=False):
         if not self._sel or not self._sel.is_valid:
             return
-        marks, undone = list(self._canvas.marks), list(self._canvas.undone)
+        marks = list(self._canvas.marks)
+        undone, history = list(self._canvas.undone), list(self._canvas.history)
         old_rect = self._canvas_rect
         old_density = self._canvas.image.width()/old_rect.width if old_rect else 1
         image = compose_region(self._frames, self._sel)
@@ -153,10 +154,11 @@ class RegionSelector(QWidget):
         if old_rect:
             dx = 0 if moved else old_rect.x-self._sel.x
             dy = 0 if moved else old_rect.y-self._sel.y
-            for mark in marks+undone:
+            versions = marks + [mark for state in history+undone for mark in state]
+            for mark in versions:
                 mark.points = [QPointF((point.x()/old_density+dx)*density,
                                       (point.y()/old_density+dy)*density) for point in mark.points]
-            self._canvas.marks, self._canvas.undone = marks, undone
+            self._canvas.marks, self._canvas.undone, self._canvas.history = marks, undone, history
         self._canvas_rect = self._sel
         self._canvas.setGeometry(self._local_sel())
         self._canvas.show()
@@ -218,6 +220,10 @@ class RegionSelector(QWidget):
             return
         if e.button() != Qt.MouseButton.LeftButton:
             return
+        if self._state == self.EDITING and self._canvas.isVisible():
+            point = self._canvas.mapFrom(self, e.position().toPoint())
+            if self._canvas.edit_text_at(QPointF(point)):
+                return
         self._canvas.commit_text()
         self._canvas.hide()
         gp = e.globalPosition().toPoint()
@@ -290,7 +296,7 @@ class RegionSelector(QWidget):
                 self._toolbar.show()
             else:
                 self._sel = None
-        if self._sel and self._state == self.EDITING:
+        if mode is not None and self._sel and self._state == self.EDITING:
             self._sync_canvas(moved=mode == 'move')
         self.update()
 
@@ -372,12 +378,15 @@ class RegionSelector(QWidget):
             return
         p = QPainter(self)
         # 遮罩：快照 + 半透明压暗
-        p.drawImage(0, 0, self._snapshot)
+        p.drawImage(self.rect(), self._snapshot)
         p.fillRect(self.rect(), QColor(10, 12, 16, 110))
         s = self._local_sel()
         if s and s.width() > 0:
             # 选区恢复清晰
-            p.drawImage(s, self._snapshot, s)
+            p.save()
+            p.setClipRect(s)
+            p.drawImage(self.rect(), self._snapshot)
+            p.restore()
             p.setPen(QPen(QColor(125, 155, 255), 2))
             p.drawRect(s)
             p.setPen(QColor(233, 237, 243))
@@ -397,7 +406,9 @@ class RegionSelector(QWidget):
     def _draw_magnifier(self, p: QPainter) -> None:
         local = self._to_local(self._cursor)
         n = self.MAG_CELLS
-        src = QRect(local.x() - n // 2, local.y() - n // 2, n, n)
+        density = self._snapshot.width() / self.width()
+        pixel = QPoint(round(local.x()*density), round(local.y()*density))
+        src = QRect(pixel.x() - n // 2, pixel.y() - n // 2, n, n)
         src = src.intersected(self._snapshot.rect())
         mag_x = min(local.x() + 24, self.width() - self.MAG_SIZE - 8)
         mag_y = min(local.y() + 24, self.height() - self.MAG_SIZE - 44)
@@ -412,8 +423,8 @@ class RegionSelector(QWidget):
         p.drawLine(mag_x + mid, mag_y, mag_x + mid, mag_y + self.MAG_SIZE)
         p.drawLine(mag_x, mag_y + mid, mag_x + self.MAG_SIZE, mag_y + mid)
         center = self._snapshot.pixelColor(
-            max(0, min(local.x(), self._snapshot.width() - 1)),
-            max(0, min(local.y(), self._snapshot.height() - 1)))
+            max(0, min(pixel.x(), self._snapshot.width() - 1)),
+            max(0, min(pixel.y(), self._snapshot.height() - 1)))
         p.setPen(QColor(233, 237, 243))
         p.drawText(mag_x, mag_y + self.MAG_SIZE + 18,
                    f"({self._cursor.x()}, {self._cursor.y()})  "
