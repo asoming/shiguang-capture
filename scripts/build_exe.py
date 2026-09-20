@@ -62,6 +62,17 @@ def main() -> int:
             args += ["--icon", str(icon)]
         for library in (media/'runtime/bin').glob('*.dll'):
             args += ['--add-binary', f'{library}:.']
+        # PyInstaller's isolated module collector does not inherit the parent's
+        # os.add_dll_directory handles. Explicitly collect Cython extensions so
+        # an unimportable submodule cannot fall back to PyAV's .py source data.
+        from importlib.metadata import distribution
+        av_root = Path(distribution('av').locate_file('av'))
+        extensions = list(av_root.rglob('*.pyd'))
+        if not extensions:
+            raise RuntimeError('PyAV 编译模块缺失，请先安装自建 wheel。')
+        for extension in extensions:
+            destination = Path('av')/extension.parent.relative_to(av_root)
+            args += ['--add-binary', f'{extension}:{destination.as_posix()}']
     if sys.platform == 'darwin':
         args += ['--osx-bundle-identifier', 'io.github.asoming.shiguang-capture']
 
