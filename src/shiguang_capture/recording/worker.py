@@ -115,7 +115,8 @@ def record(connection, options: RecordingOptions):
     screen = next((s for s in app.screens() if s.name() == options.screen), None)
     writer = audio = None
     activity = RecordingActivity()
-    metrics = {'frames': 0, 'image_conversion_ms': 0.0, 'encoding_ms': 0.0}
+    metrics = {'frames': 0, 'image_conversion_ms': 0.0, 'encoding_ms': 0.0,
+               'max_tick_ms': 0.0, 'max_clock_gap_ms': 0.0, 'active_sleep_ms': 0.0}
     finished = False
     encoder_thread = capture = None
     stop_clock = threading.Event()
@@ -282,10 +283,21 @@ def record(connection, options: RecordingOptions):
             # A native GUI event loop can delay timers during window capture,
             # especially on macOS. Keep encoding cadence on its own clock while
             # all capture start/stop operations stay on the Qt main thread.
+            previous = time.monotonic()
             while not finished and not stop_clock.is_set():
                 began = time.monotonic()
+                active_before = started is not None and paused_at is None
+                if active_before:
+                    metrics['max_clock_gap_ms'] = max(metrics['max_clock_gap_ms'], (began-previous)*1000)
+                previous = began
                 tick()
-                stop_clock.wait(max(.001, 1/options.fps-(time.monotonic()-began)))
+                work_time = time.monotonic()-began
+                if active_before:
+                    metrics['max_tick_ms'] = max(metrics['max_tick_ms'], work_time*1000)
+                before_sleep = time.monotonic()
+                time.sleep(max(.001, 1/options.fps-work_time))
+                if active_before:
+                    metrics['active_sleep_ms'] += (time.monotonic()-before_sleep)*1000
 
         activity.start()
         capture.start()
