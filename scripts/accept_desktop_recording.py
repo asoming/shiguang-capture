@@ -56,10 +56,12 @@ def main():
         deadline = time.monotonic() + 45
         while time.monotonic() < deadline:
             app.processEvents()
-            while parent.poll():
+            while True:
                 try:
+                    if not parent.poll():
+                        break
                     event = parent.recv()
-                except EOFError:
+                except (EOFError, OSError):
                     break
                 events.append(event)
                 if event['type'] == 'error':
