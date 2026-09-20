@@ -26,7 +26,7 @@ def main(output_path=None, window_mode=False):
     report['capture_mode'] = 'window' if window_mode else 'region'
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
-    window = QWidget(None, Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
+    window = QWidget(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
     window.setWindowTitle('Shiguang synthetic recording test')
     window.resize(400, 260)
     window.move(app.primaryScreen().availableGeometry().topLeft() + QPoint(80, 80))
@@ -56,6 +56,18 @@ def main(output_path=None, window_mode=False):
         assert still.height() == round(180*screen.devicePixelRatio())
         still.save(str(output/'native-screenshot.png'))
         report['native_screenshot'] = 'passed'
+        if window_mode:
+            from PySide6.QtMultimedia import QWindowCapture
+            report['target_enumerated'] = any(
+                item.isValid() and item.description() == window.windowTitle()
+                for item in QWindowCapture.capturableWindows())
+            if sys.platform.startswith('linux'):
+                import subprocess
+                report['x11_target'] = subprocess.run(
+                    ['xprop', '-id', str(int(window.winId())), 'WM_NAME', '_NET_WM_NAME', '_NET_WM_WINDOW_TYPE'],
+                    capture_output=True, text=True).stdout
+                report['x11_client_list'] = subprocess.run(
+                    ['xprop', '-root', '_NET_CLIENT_LIST'], capture_output=True, text=True).stdout
         context = multiprocessing.get_context('spawn')
         parent, child = context.Pipe()
         options = RecordingOptions(str(output/'native-pause-resume.mp4'), screen.name(),
