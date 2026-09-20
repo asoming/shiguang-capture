@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  PYTHONIOENCODING: utf-8
+
 jobs:
   # 纯逻辑层单测：三平台 × 两个 Python 版本，零 GUI 依赖
   test:

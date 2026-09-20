@@ -10,6 +10,8 @@ import sys
 
 
 def main() -> int:
+    from shiguang_capture._console import fix_console_encoding
+    fix_console_encoding()
     from PIL import Image, ImageDraw
 
     from shiguang_capture.ocr import create_backend

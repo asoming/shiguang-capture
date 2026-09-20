@@ -13,6 +13,8 @@ from shiguang_capture.selftest import sample_font
 
 
 def main():
+    from shiguang_capture._console import fix_console_encoding
+    fix_console_encoding()
     app = QApplication.instance() or QApplication([])
     app.setQuitOnLastWindowClosed(False)
     controller = AppController(app, AppConfig())
