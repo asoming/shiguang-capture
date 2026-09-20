@@ -1,0 +1,91 @@
+name: Windows and macOS package candidates
+on:
+  push:
+    branches: ['feat/**']
+    paths: ['src/**', 'scripts/build*.py', 'pyproject.toml', '.github/workflows/package-candidates.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      PYTHONIOENCODING: utf-8
+      SHIGUANG_NO_HOTKEYS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: MSYS
+          path-type: inherit
+          install: make nasm diffutils
+      - name: Install build dependencies
+        run: pip install -e ".[gui,ocr,record,dev]" pyinstaller wheel "Cython>=3.1,<4"
+      - name: Build media runtime on macOS
+        if: runner.os == 'macOS'
+        run: python scripts/build_media_runtime.py
+      - name: Build media runtime on Windows
+        if: runner.os == 'Windows'
+        env:
+          SHIGUANG_MSYS_BASH: C:\msys64\usr\bin\bash.exe
+        run: python scripts/build_media_runtime.py
+      - name: Install custom encoder wheel
+        shell: bash
+        run: pip install --force-reinstall --no-deps build/media-runtime/wheels/*.whl
+      - name: Build Windows package
+        if: runner.os == 'Windows'
+        run: python scripts/build_exe.py
+      - name: Build macOS package
+        if: runner.os == 'macOS'
+        env:
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/build/media-runtime/runtime/lib
+        run: python scripts/build_exe.py
+      - name: Test standalone Windows package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($argument in @('--self-test','--recording-self-test')) {
+            $process = Start-Process -FilePath 'dist/ShiguangCapture/ShiguangCapture.exe' -ArgumentList $argument -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "Standalone test failed: $argument ($($process.ExitCode))" }
+          }
+      - name: Test standalone macOS application
+        if: runner.os == 'macOS'
+        run: |
+          dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --self-test
+          dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --recording-self-test
+          tar -czf dist/ShiguangCapture-macOS-arm64-preview.tar.gz -C dist ShiguangCapture.app
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: package-candidate-${{ matrix.os }}
+          path: |
+            dist/ShiguangCapture-macOS-arm64-preview.tar.gz
+            dist/ShiguangCapture/ShiguangCapture.exe
+            dist/ShiguangCapture/_internal/
+            dist/ShiguangCapture/licenses/
+            dist/ShiguangCapture/validation/
+            dist/ShiguangCapture/README.md
+            dist/ShiguangCapture/LICENSE
+            dist/ShiguangCapture/VERSION
+            dist/ShiguangCapture/THIRD_PARTY_NOTICES.md
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: package-failure-${{ matrix.os }}
+          path: |
+            build/media-runtime/ffmpeg-8.0.1/ffbuild/config.log
+            build/pyinstaller/ShiguangCapture/warn-ShiguangCapture.txt

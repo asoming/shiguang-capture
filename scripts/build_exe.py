@@ -19,6 +19,12 @@ except ImportError:
 
 
 def main() -> int:
+    import os
+    media = Path(os.environ.get('SHIGUANG_MEDIA_BUILD', ROOT/'build/media-runtime'))
+    dll_directory = None
+    if sys.platform == 'win32':
+        dll_directory = os.add_dll_directory(str(media/'runtime/bin'))
+        os.environ['PATH'] = str(media/'runtime/bin')+os.pathsep+os.environ['PATH']
     try:
         import PyInstaller.__main__
     except ImportError:
@@ -53,6 +59,8 @@ def main() -> int:
         args += ['--add-binary', f'{cursor_lib}:.']
     if icon.is_file() and sys.platform == "win32":
         args += ["--icon", str(icon)]
+        for library in (media/'runtime/bin').glob('*.dll'):
+            args += ['--add-binary', f'{library}:.']
 
     print("PyInstaller args:", " ".join(args))
     PyInstaller.__main__.run(args)
@@ -92,6 +100,12 @@ def main() -> int:
     shutil.copy2(ROOT / 'docs/assets/icon-256.png', bundle / 'icon.png')
     if sys.platform.startswith('linux'):
         shutil.copy2(ROOT / 'scripts/install-linux.sh', bundle / 'install-linux.sh')
+    if sys.platform == 'darwin':
+        resources = ROOT/'dist/ShiguangCapture.app/Contents/Resources'
+        for directory in ('licenses', 'validation'):
+            shutil.copytree(bundle/directory, resources/directory, dirs_exist_ok=True)
+        for name in ('LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md', 'VERSION'):
+            shutil.copy2(bundle/name, resources/name)
     print("OK ->", exe)
     return 0
 

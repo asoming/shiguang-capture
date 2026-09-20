@@ -14,6 +14,8 @@ import subprocess
 import sys
 import tarfile
 import urllib.request
+import shutil
+import shlex
 
 VERSION = '8.0.1'
 SHA256 = '05ee0b03119b45c0bdb4df654b96802e909e0a752f72e4fe3794f487229e5a41'
@@ -44,14 +46,33 @@ def main():
         with tarfile.open(archive) as content:
             content.extractall(root, filter='data')
     prefix = root/'runtime'
-    configure = ['./configure', f'--prefix={prefix}', *FLAGS]
-    subprocess.run(configure, cwd=source, check=True)
-    subprocess.run(['make', '-j', str(min(4, os.cpu_count() or 2))], cwd=source, check=True)
-    subprocess.run(['make', 'install'], cwd=source, check=True)
+    if sys.platform == 'win32':
+        bash = os.environ['SHIGUANG_MSYS_BASH']
+        def unix_path(path):
+            return subprocess.check_output([bash, '-c', 'cygpath -u '+shlex.quote(str(path))], text=True).strip()
+        compiler = shutil.which('cl')
+        if compiler is None:
+            raise RuntimeError('Use an x64 Visual Studio developer environment before building.')
+        compiler_path = unix_path(Path(compiler).parent)
+        configure = ['./configure', f'--prefix={unix_path(prefix)}', '--toolchain=msvc', *FLAGS]
+        def build(command):
+            # MSVC link.exe must take precedence over MSYS's unrelated link tool.
+            script = 'export PATH='+shlex.quote(compiler_path)+':"$PATH"; '+shlex.join(command)
+            subprocess.run([bash, '-c', script], cwd=source, check=True)
+    else:
+        configure = ['./configure', f'--prefix={prefix}', *FLAGS]
+        def build(command):
+            subprocess.run(command, cwd=source, check=True)
+    build(configure)
+    build(['make', '-j', str(min(4, os.cpu_count() or 2))])
+    build(['make', 'install'])
     environment = os.environ.copy()
     environment['PKG_CONFIG_PATH'] = str(prefix/'lib/pkgconfig')
     library_var = 'DYLD_LIBRARY_PATH' if sys.platform == 'darwin' else 'LD_LIBRARY_PATH'
     environment[library_var] = str(prefix/'lib') + os.pathsep + environment.get(library_var, '')
+    if sys.platform == 'win32':
+        environment['INCLUDE'] = str(prefix/'include')+';'+environment.get('INCLUDE', '')
+        environment['LIB'] = str(prefix/'lib')+';'+environment.get('LIB', '')
     subprocess.run([sys.executable, '-m', 'pip', 'install', 'Cython>=3.1,<4'], check=True)
     # --no-cache-dir avoids reusing a wheel from a different codec build.
     subprocess.run([sys.executable, '-m', 'pip', 'wheel', 'av==16.1.0', '--no-binary=av',
