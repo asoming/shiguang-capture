@@ -6,22 +6,25 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt, Signal, QUrl
-from PySide6.QtGui import QDesktopServices, QGuiApplication
+from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
-                              QPushButton, QComboBox, QFileDialog, QLineEdit)
+                              QPushButton, QComboBox, QFileDialog, QLineEdit,
+                              QTabBar, QStackedWidget)
 
 from ..recording.worker import RecordingOptions, record, probe_audio, probe_windows
 from .theme import STYLE
 from .record_overlay import CountdownOverlay, RecordingOrb
 from .tool_icons import tool_icon
+from .record_library import RecordingLibrary
 
 
 class RecordPanel(QWidget):
     choose_region = Signal()
+    folder_changed = Signal(str)
     idle = Signal()
 
-    def __init__(self):
+    def __init__(self, folder=None):
         super().__init__()
         self.setWindowTitle('拾光 · 录屏')
         self.setObjectName('workspace')
@@ -41,13 +44,27 @@ class RecordPanel(QWidget):
         self.window_title = None
         self.recovery = None
         self.last_path = None
+        self.current_path = None
         self.countdown = 0
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(20, 12, 20, 20)
+        outer.setSpacing(16)
+        self.tabs = QTabBar()
+        self.tabs.setExpanding(False)
+        self.tabs.addTab('本地录制')
+        self.tabs.addTab('录屏文件')
+        self.tabs.setStyleSheet('QTabBar::tab {padding:12px 20px; color:#657D8E;} QTabBar::tab:selected {color:#3188F5; border-bottom:3px solid #3188F5;}')
+        outer.addWidget(self.tabs)
+        self.pages = QStackedWidget()
+        record_page = QWidget()
+        self.pages.addWidget(record_page)
+        self.library = RecordingLibrary()
+        self.pages.addWidget(self.library)
+        outer.addWidget(self.pages, 1)
+        self.tabs.currentChanged.connect(self._switch_page)
+        layout = QVBoxLayout(record_page)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(20)
-        header = QLabel('本地录制')
-        header.setStyleSheet('color:#3188F5; font-size:17px; font-weight:600; padding:8px 0;')
-        layout.addWidget(header)
         content = QHBoxLayout()
         content.setSpacing(28)
         self.fields = QWidget()
@@ -88,7 +105,8 @@ class RecordPanel(QWidget):
             self.fps.addItem(f'{fps} fps', fps)
         self.fps.setCurrentIndex(1)
         form.addRow('帧率', self.fps)
-        self.folder = QLineEdit(str(Path.home()/'Videos'/'Shiguang'))
+        self.folder = QLineEdit(str(Path(folder or '~/Videos/Shiguang').expanduser()))
+        self.folder.editingFinished.connect(self._folder_edited)
         folder_row = QHBoxLayout()
         folder_row.addWidget(self.folder, 1)
         browse = QPushButton('…')
@@ -140,7 +158,7 @@ class RecordPanel(QWidget):
         recover.clicked.connect(self._recover)
         self.open_button = QPushButton('打开视频')
         self.open_button.setEnabled(False)
-        self.open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_path))))
+        self.open_button.clicked.connect(lambda: self.library.open_path(self.last_path))
         footer.addStretch()
         footer.addWidget(recover)
         footer.addWidget(self.open_button)
@@ -160,6 +178,19 @@ class RecordPanel(QWidget):
         self.timer.setInterval(40)
         self.timer.timeout.connect(self._poll)
         self.timer.start()
+
+    def _refresh_library(self):
+        self.library.set_folder(self.folder.text(), self.current_path if self.active else None)
+
+    def _folder_edited(self):
+        self._refresh_library()
+        if self.folder.text().strip():
+            self.folder_changed.emit(str(Path(self.folder.text()).expanduser().absolute()))
+
+    def _switch_page(self, index):
+        if index == 1:
+            self._refresh_library()
+        self.pages.setCurrentIndex(index)
 
     def refresh_preview(self):
         if self.active:
@@ -238,6 +269,7 @@ class RecordPanel(QWidget):
         path = QFileDialog.getExistingDirectory(self, '保存位置', self.folder.text())
         if path:
             self.folder.setText(path)
+            self._folder_edited()
 
     def _audio_changed(self):
         mode = self.audio.currentData()
@@ -265,6 +297,9 @@ class RecordPanel(QWidget):
         elif self.state == 'idle':
             if self.process is not None:
                 return
+            if not self.folder.text().strip():
+                self.status.setText('请选择保存位置。')
+                return
             mode = self.audio.currentData()
             if (mode in ('mic', 'both') and self.microphone.currentData() is None or
                     mode in ('system', 'both') and self.system_audio.currentData() is None):
@@ -288,6 +323,8 @@ class RecordPanel(QWidget):
         self.countdown_overlay.hide()
         mode = self.audio.currentData()
         target = Path(self.folder.text()).expanduser()/f'录屏_{datetime.now():%Y%m%d_%H%M%S}.mp4'
+        self.current_path = target.absolute()
+        self._refresh_library()
         options = RecordingOptions(str(target), self.screen.currentData(), self.region, self.fps.currentData(),
                                    self.microphone.currentData() if mode in ('mic', 'both') else None,
                                    self.system_audio.currentData() if mode in ('system', 'both') else None,
@@ -334,6 +371,8 @@ class RecordPanel(QWidget):
 
     def _set_idle(self):
         self.state = 'idle'
+        self.current_path = None
+        self._refresh_library()
         self.fields.setEnabled(True)
         self.recover_button.setEnabled(True)
         self.start_button.setEnabled(True)
@@ -467,6 +506,7 @@ class RecordPanel(QWidget):
         context = multiprocessing.get_context('spawn')
         self.connection, child = context.Pipe()
         target = Path(path).with_name(f'恢复_{datetime.now():%Y%m%d_%H%M%S}.mp4')
+        self.current_path = target.absolute()
         self.process = context.Process(target=recover_worker, args=(child, path, str(target)), daemon=True)
         try:
             self.process.start()
@@ -482,6 +522,7 @@ class RecordPanel(QWidget):
         self.start_button.setEnabled(False)
         self.recover_button.setEnabled(False)
         self.status.setText('正在恢复…')
+        self._refresh_library()
 
     def closeEvent(self, event):
         if self.active:

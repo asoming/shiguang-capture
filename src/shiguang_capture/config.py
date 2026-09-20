@@ -42,6 +42,7 @@ class HotkeyConfig:
 class AppConfig:
     hotkeys: HotkeyConfig = field(default_factory=HotkeyConfig)
     save_dir: str = "~/Pictures/Shiguang"
+    record_dir: str = "~/Videos/Shiguang"
     image_format: str = "png"          # png / jpg
     copy_to_clipboard: bool = True     # 截图后自动写剪贴板
     play_shutter_sound: bool = False

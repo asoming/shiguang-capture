@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shiguang-capture"
-version = "1.4.0"
+version = "1.4.1"
 description = "拾光 Capture — 屏幕信息捕获与再利用工具（截/钉/取/录 + 本地 OCR + 离线翻译）"
 readme = "README.md"
 license = { text = "MIT" }
@@ -29,6 +29,7 @@ dependencies = ["numpy>=1.26,<3", "openpyxl>=3.1.5,<4"]
 gui = [
     "PySide6>=6.8,<7",
     "pynput>=1.7,<2",
+    "pyobjc-framework-Cocoa>=10; sys_platform == 'darwin'",
 ]
 ocr = [
     "rapidocr-onnxruntime==1.4.4",
