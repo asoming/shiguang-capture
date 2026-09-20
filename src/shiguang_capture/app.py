@@ -80,6 +80,8 @@ class AppController:
         self._last_image = None
         self._selector = self._picker = self._settings = None
         self._scroll_session = self._scroll_preview = None
+        self._record_panel = None
+        self._quit_after_recording = False
         self._pins = []
         self._pins_hidden = False
         self._closing = False
@@ -87,6 +89,7 @@ class AppController:
         self.tray = TrayIcon()
         for signal, callback in [
             (self.tray.action_capture, self.start_region_capture),
+            (self.tray.action_record, self.open_recording),
             (self.tray.action_scroll, self.start_scroll_capture),
             (self.tray.action_pick, self.start_color_pick),
             (self.tray.action_ocr, self.ocr_recognize),
@@ -143,13 +146,15 @@ class AppController:
         actions = {'capture_region': self.start_region_capture, 'capture_fullscreen': self.capture_fullscreen,
                    'capture_scroll': self.start_scroll_capture, 'pin_last': self.pin_from_clipboard,
                    'color_picker': self.start_color_pick, 'hide_all_pins': self.toggle_pins,
-                   'ocr_recognize': self.ocr_recognize}
+                   'ocr_recognize': self.ocr_recognize,
+                   'record_toggle': self.toggle_recording, 'record_stop': self.stop_recording}
         actions.get(action, lambda: None)()
 
     def open_workspace(self):
         if self._panel is None:
             panel = ResultPanel(delegate=self._recognize_panel)
             panel.capture_requested.connect(self.start_region_capture)
+            panel.record_requested.connect(self.open_recording)
             panel.open_requested.connect(self.open_image)
             panel.paste_requested.connect(self.paste_image)
             panel.file_dropped.connect(self.open_image)
@@ -162,6 +167,62 @@ class AppController:
         self._panel.raise_()
         self._panel.activateWindow()
         return self._panel
+
+    def open_recording(self):
+        if self._record_panel is None:
+            from .ui.record_panel import RecordPanel
+            self._record_panel = RecordPanel()
+            self._record_panel.choose_region.connect(self._choose_record_region)
+            self._record_panel.idle.connect(self._recording_idle)
+        self._record_panel.show()
+        self._record_panel.raise_()
+        self._record_panel.activateWindow()
+
+    def toggle_recording(self):
+        if self._record_panel and self._record_panel.active:
+            self._record_panel.toggle()
+        else:
+            self.open_recording()
+
+    def stop_recording(self):
+        if self._record_panel:
+            self._record_panel.stop()
+
+    def _recording_idle(self):
+        if self._quit_after_recording:
+            self._quit_after_recording = False
+            self.shutdown()
+
+    def _choose_record_region(self):
+        if self._selector:
+            self._selector.close()
+        self._record_panel.hide()
+        if self._panel:
+            self._panel.hide()
+        QTimer.singleShot(150, self._show_record_selector)
+
+    def _show_record_selector(self):
+        if self._closing:
+            return
+        try:
+            self._selector = RegionSelector(selection_only=True)
+            self._selector.action_chosen.connect(self._record_region_chosen)
+            self._selector.cancelled.connect(self._record_selection_cancelled)
+            self._selector.show()
+            self._selector.activateWindow()
+        except (RuntimeError, ValueError) as exc:
+            self._record_panel.status.setText(str(exc))
+            self._record_panel.show()
+
+    def _record_selection_cancelled(self):
+        self._clear_selector()
+        self._record_panel.show()
+
+    def _record_region_chosen(self, rect, action):
+        self._clear_selector()
+        if action == 'copy':
+            self._record_panel.set_region(rect)
+        self._record_panel.show()
 
     def _image_changed(self):
         self.cancel_recognition()
@@ -195,6 +256,7 @@ class AppController:
         self._start_selector(True)
 
     def _start_selector(self, scroll):
+        self.cancel_recognition()
         if self._scroll_session and self._scroll_session.is_running:
             self._error('请先完成或停止当前长截图。')
             return
@@ -240,12 +302,12 @@ class AppController:
             self._last_image = image
             if action == 'copy':
                 QGuiApplication.clipboard().setImage(image)
-                self.tray.notify('拾光 Capture', '图片已复制，未保存到磁盘。')
+                self.tray.notify('拾光 Capture', '已复制')
             elif action == 'save':
                 self.save_as(image)
             elif action == 'pin':
                 self.pin_image(image)
-            elif action in ('ocr', 'translate'):
+            elif action in ('ocr', 'translate', 'code', 'table'):
                 self._begin_recognition(image, action)
             elif action == 'edit':
                 self.open_workspace().set_image(image)
@@ -542,6 +604,10 @@ class AppController:
             self._settings.status.setText(message)
 
     def shutdown(self):
+        if self._record_panel and self._record_panel.active:
+            self._quit_after_recording = True
+            self._record_panel.stop()
+            return
         self._closing = True
         self.cancel_recognition()
         if self._scroll_session:

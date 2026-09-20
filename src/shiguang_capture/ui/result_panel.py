@@ -13,6 +13,7 @@ from ..structured import table_clipboard, markdown_table, xlsx_bytes, code_block
 
 
 class ResultPanel(QWidget):
+    record_requested = Signal()
     closed = Signal()
     open_requested = Signal()
     capture_requested = Signal()
@@ -38,24 +39,16 @@ class ResultPanel(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 22, 28, 20)
         root.setSpacing(18)
-        brand_row = QHBoxLayout()
-        brand_row.addWidget(QLabel('拾光  /  CAPTURE', objectName='brand'))
-        brand_row.addStretch()
-        brand_row.addWidget(QLabel('本地处理 · 不自动保存', objectName='status'))
-        root.addLayout(brand_row)
         heading = QHBoxLayout()
-        title = QVBoxLayout()
-        self.head = QLabel('把画面，留给下一步。', objectName='title')
-        title.addWidget(self.head)
-        self.meta = QLabel('打开图片或截取屏幕，标注、校对，然后带走。', objectName='muted')
+        self.head = QLabel('', self)
+        self.head.hide()
+        self.meta = QLabel('', objectName='muted')
         self.meta.setWordWrap(True)
-        title.addWidget(self.meta)
-        heading.addLayout(title, 1)
-        heading.addSpacing(12)
-        for label, signal in [('截图', self.capture_requested), ('粘贴图片', self.paste_requested), ('打开图片', self.open_requested)]:
+        for label, signal in [('截图', self.capture_requested), ('录屏', self.record_requested), ('粘贴图片', self.paste_requested), ('打开图片', self.open_requested)]:
             button = QPushButton(label)
             button.clicked.connect(signal.emit)
             heading.addWidget(button)
+        heading.addStretch()
         root.addLayout(heading)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -90,7 +83,7 @@ class ResultPanel(QWidget):
             button.clicked.connect(callback)
             edit_bar.addWidget(button)
         edit_bar.addStretch()
-        edit_bar.addWidget(QLabel('遮盖区域不会进入新识别结果', objectName='muted'))
+
         source_layout.addLayout(edit_bar)
         navigation = QHBoxLayout()
         self.block_combo = QComboBox()
@@ -122,7 +115,7 @@ class ResultPanel(QWidget):
         text_header.addWidget(self.retry_btn)
         text_layout.addLayout(text_header)
         self.source_edit = QPlainTextEdit()
-        self.source_edit.setPlaceholderText('识别结果会出现在这里。\n请对照左侧原图校对，再点击复制。')
+        self.source_edit.setPlaceholderText('识别结果')
         text_layout.addWidget(self.source_edit, 1)
         self.table_grid = QTableWidget()
         self.table_grid.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -165,9 +158,12 @@ class ResultPanel(QWidget):
         root.addWidget(self.splitter, 1)
 
         footer = QHBoxLayout()
-        self.gloss = QLabel('内容仅保留在本次会话中。', objectName='muted')
+        self.gloss = QLabel('', objectName='muted')
         self.gloss.setWordWrap(True)
-        footer.addWidget(self.gloss, 1)
+        status = QVBoxLayout()
+        status.addWidget(self.meta)
+        status.addWidget(self.gloss)
+        footer.addLayout(status, 1)
         self.cancel_btn = QPushButton('取消识别')
         self.cancel_btn.clicked.connect(self.cancel_requested.emit)
         self.cancel_btn.hide()
@@ -220,17 +216,18 @@ class ResultPanel(QWidget):
         self.canvas.update()
         self.source_edit.clear()
         self.target_edit.clear()
-        self.meta.setText('图像已修改 · 请重新识别当前可见内容')
-        self.gloss.setText('已清除旧识别结果。复制、保存和识别均使用当前标注图。')
+        self.meta.setText('图像已修改，需重新识别')
+        self.gloss.clear()
         self._update_actions()
 
     def set_image(self, image):
         self._image = image
         self.canvas.set_image(image)
         self._invalidate()
-        self.head.setText('看清原图，再带走内容。')
+
         self.dimensions.setText(f'{image.width():,} × {image.height():,} px')
-        self.meta.setText('图片已就绪 · 可以标注，也可以提取文字')
+        self.meta.clear()
+        self.gloss.clear()
 
     def show_result(self, kind, result):
         self._kind = kind
@@ -245,11 +242,11 @@ class ResultPanel(QWidget):
         conf = '未提供置信信息' if confidence is None else f'行级平均置信度 {confidence:.0%}'
         self.meta.setText(f'本地识别 · {result.elapsed_ms:,} ms · {len(result.text)} 字 · {conf}')
         low = sum(1 for block in result.blocks if block.get('confidence') is not None and block['confidence'] < .8)
-        self.gloss.setText(f'有 {low} 个低置信文字块，请仔细校对。' if low else '识别完成。校对后点击复制，剪贴板不会自动改变。')
+        self.gloss.setText(f'有 {low} 个低置信文字块，请仔细校对。' if low else '识别完成')
         if kind == 'code':
-            self.gloss.setText('按可见位置恢复缩进，不补写代码。请核对标点和缩进后使用。')
+            self.gloss.setText('请核对符号与缩进')
         elif kind == 'table':
-            self.gloss.setText('点击单元格可定位原图。XLSX 按文本保存编号、日期和公式样式内容。')
+            self.gloss.setText('点击单元格定位原图')
         self.retry_btn.setText('重新识别')
         self._update_actions()
 
@@ -410,10 +407,10 @@ class ResultPanel(QWidget):
         self.canvas.set_image(QImage())
         self._image = None
         self._invalidate()
-        self.head.setText('把画面，留给下一步。')
+
         self.dimensions.setText('尚未载入图片')
-        self.meta.setText('会话已清空 · 已保存的文件和系统剪贴板不受影响')
-        self.gloss.setText('打开图片或截取屏幕开始。')
+        self.meta.clear()
+        self.gloss.clear()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and len(event.mimeData().urls()) == 1 and event.mimeData().urls()[0].isLocalFile():

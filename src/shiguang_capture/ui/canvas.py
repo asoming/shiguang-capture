@@ -12,6 +12,8 @@ class Mark:
     tool: str
     points: list[QPointF]
     text: str = ''
+    color: str = '#DA704C'
+    width: float = 0
 
 
 class ImageCanvas(QWidget):
@@ -21,6 +23,8 @@ class ImageCanvas(QWidget):
         super().__init__(parent)
         self.image = QImage()
         self.tool = 'view'
+        self.color = '#DA704C'
+        self.line_width = 0
         self.marks: list[Mark] = []
         self.undone: list[Mark] = []
         self.draft = None
@@ -61,7 +65,7 @@ class ImageCanvas(QWidget):
         width = max(2, self.image.width()/450)
         for mark in marks:
             a, b = mark.points[0], mark.points[-1]
-            painter.setPen(QPen(QColor('#DA704C'), width, Qt.PenStyle.SolidLine,
+            painter.setPen(QPen(QColor(mark.color), mark.width or width, Qt.PenStyle.SolidLine,
                                 Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             box = QRectF(a, b).normalized()
@@ -135,12 +139,12 @@ class ImageCanvas(QWidget):
         if self.tool == 'text':
             text, ok = QInputDialog.getText(self, '添加文字', '标注文字')
             if ok and text.strip():
-                self.marks.append(Mark('text', [point], text))
+                self.marks.append(Mark('text', [point], text, self.color, self.line_width))
                 self.undone.clear()
                 self.changed.emit()
                 self.update()
         else:
-            self.draft = Mark(self.tool, [point, point])
+            self.draft = Mark(self.tool, [point, point], color=self.color, width=self.line_width)
 
     def mouseMoveEvent(self, event):
         if self._pan_origin is not None:

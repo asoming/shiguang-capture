@@ -21,6 +21,8 @@ class HotkeyConfig:
     color_picker: str = "f2"
     hide_all_pins: str = "shift+f3"
     ocr_recognize: str = "f4"
+    record_toggle: str = "f6"
+    record_stop: str = "f7"
 
     def conflicts(self) -> list[tuple[str, str]]:
         """返回互相冲突的热键对（同一按键分配给两个动作）。"""
