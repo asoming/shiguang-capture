@@ -73,4 +73,5 @@ testpaths = ["tests"]
 addopts = "-q"
 
 [tool.setuptools.package-data]
+"shiguang_capture" = ["assets/*.ttf"]
 "shiguang_capture.ocr" = ["models.json"]

@@ -63,8 +63,16 @@ def main() -> int:
     import shutil
     from collect_licenses import collect
     bundle = exe.parent
+    # PDF decoding and the virtual keyboard are not product features. Do not ship
+    # their optional Qt modules or plugins (which have separate licensing).
+    for pattern in ('**/libqpdf.so', '**/libqtvirtualkeyboardplugin.so',
+                    '**/libQt6Pdf.so*', '**/libQt6VirtualKeyboard*.so*'):
+        for unused in bundle.glob(pattern):
+            unused.unlink()
     collect(bundle / 'licenses/dependencies')
     shutil.copytree(ROOT / 'licenses', bundle / 'licenses', dirs_exist_ok=True)
+    shutil.copytree(ROOT / 'validation', bundle / 'validation', dirs_exist_ok=True)
+    shutil.copy2(ROOT / 'requirements-linux.lock', bundle / 'requirements-linux.lock')
     for name in ('LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md'):
         shutil.copy2(ROOT / name, bundle / name)
     shutil.copy2(ROOT / 'docs/assets/icon-256.png', bundle / 'icon.png')

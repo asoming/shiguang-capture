@@ -6,6 +6,18 @@ import os
 import threading
 
 
+def sample_font(size):
+    from importlib.resources import files
+    from PySide6.QtGui import QFont, QFontDatabase
+    font_id = QFontDatabase.addApplicationFont(str(files('shiguang_capture').joinpath('assets/DejaVuSans.ttf')))
+    families = QFontDatabase.applicationFontFamilies(font_id)
+    if not families:
+        raise RuntimeError('自测字体无法加载')
+    font = QFont(families[0])
+    font.setPixelSize(size)
+    return font
+
+
 def run():
     os.environ['QT_QPA_PLATFORM']='offscreen'
     os.environ['SHIGUANG_NO_HOTKEYS']='1'
@@ -21,7 +33,7 @@ def run():
     app.clipboard().setText('self-test sentinel')
     image=QImage(900,250,QImage.Format.Format_RGB888)
     image.fill(Qt.GlobalColor.white)
-    p=QPainter(image);p.setPen(Qt.GlobalColor.black);p.setFont(QFont('DejaVu Sans',24))
+    p=QPainter(image);p.setPen(Qt.GlobalColor.black);p.setFont(sample_font(32))
     p.drawText(QRect(30,30,850,150),Qt.AlignmentFlag.AlignLeft,'Capture 00123\nLocal image review');p.end()
     buf=QBuffer();buf.open(QIODevice.OpenModeFlag.WriteOnly);assert image.save(buf,'PNG')
     runner=RecognitionRunner()
@@ -36,7 +48,7 @@ def run():
         assert first_pid==runner._process.pid
         # Draw a complete 2 x 2 grid and exercise the production process mode.
         grid=QImage(700,240,QImage.Format.Format_RGB888);grid.fill(Qt.GlobalColor.white)
-        p=QPainter(grid);p.setPen(Qt.GlobalColor.black);p.setFont(QFont('DejaVu Sans',22))
+        p=QPainter(grid);p.setPen(Qt.GlobalColor.black);p.setFont(sample_font(30))
         for x in (20,350,680):p.drawLine(x,20,x,220)
         for y in (20,120,220):p.drawLine(20,y,680,y)
         for x,y,text in ((40,80,'ID'),(370,80,'Value'),(40,180,'00123'),(370,180,'128.50')):p.drawText(x,y,text)

@@ -33,3 +33,14 @@ minimal runtime SBOM.
 
 No Argos translation model is included in the Linux package. The optional
 translation feature is experimental and clearly identifies its dictionary fallback.
+
+The OpenCV GUI wheel also bundles dynamically loaded Qt 5.15.19 libraries under
+LGPL-3.0; see its LICENSE-3RD-PARTY.txt. Corresponding Qt sources are available at
+https://download.qt.io/archive/qt/5.15/5.15.19/submodules/ . Optional Qt PDF and virtual-keyboard plugins/modules are excluded from the Linux
+package. Qt license texts are provided in licenses/Qt/. DejaVu Sans is included
+only as a deterministic self-test font; its Bitstream/DejaVu notices are included. System desktop libraries copied from Ubuntu are inventoried
+with package versions and complete distro copyright notices under
+`licenses/dependencies/system/`. Source packages are available from the Ubuntu
+archive at https://archive.ubuntu.com/ubuntu/pool/ (use the source package named in
+each copyright notice and matching version); dynamic libraries remain replaceable.
+The Python runtime license is included as Python-LICENSE.txt.

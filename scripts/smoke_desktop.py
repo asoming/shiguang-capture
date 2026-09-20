@@ -9,6 +9,7 @@ from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QColor, QImage, QPainter, QFont
 from shiguang_capture.app import AppController
 from shiguang_capture.config import AppConfig
+from shiguang_capture.selftest import sample_font
 
 
 def main():
@@ -19,7 +20,7 @@ def main():
     image.fill(QColor('white'))
     painter = QPainter(image)
     painter.setPen(QColor('black'))
-    painter.setFont(QFont('DejaVu Sans', 28))
+    painter.setFont(sample_font(36))
     painter.drawText(QRect(30, 40, 940, 150), Qt.AlignmentFlag.AlignLeft, 'Capture 00123\nLocal image review')
     painter.end()
     app.clipboard().setText('keep user content')
