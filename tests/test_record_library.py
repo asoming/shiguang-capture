@@ -1,6 +1,7 @@
 """Saved recordings follow the chosen folder and act on the selected file."""
 import os
 from pathlib import Path
+import time
 
 import pytest
 
@@ -81,7 +82,11 @@ def test_delete_cancel_failure_and_success_are_safe(library, tmp_path, monkeypat
 
 def test_external_changes_and_missing_folders_refresh(library, tmp_path):
     (tmp_path / 'created.mp4').touch()
-    QTest.qWait(650)
+    # Directory notifications are asynchronous and macOS may coalesce them.
+    # Wait for the actual refresh, without manually invoking the behavior tested.
+    deadline = time.monotonic() + 3
+    while library.table.topLevelItemCount() != 1 and time.monotonic() < deadline:
+        QTest.qWait(20)
     assert library.table.topLevelItemCount() == 1
     library.set_folder(str(tmp_path / 'not-created'))
     assert library.table.topLevelItemCount() == 0

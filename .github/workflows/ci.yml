@@ -118,6 +118,7 @@ jobs:
           dist/ShiguangCapture/ShiguangCapture --self-test
           dist/ShiguangCapture/ShiguangCapture --recording-self-test
           xvfb-run -a -s '-screen 0 1280x800x24' env XDG_SESSION_TYPE=x11 dist/ShiguangCapture/ShiguangCapture --recording-desktop-test artifacts/package-native
+          xvfb-run -a -s '-screen 0 1280x800x24' env XDG_SESSION_TYPE=x11 dist/ShiguangCapture/ShiguangCapture --preview-desktop-test artifacts/package-preview
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

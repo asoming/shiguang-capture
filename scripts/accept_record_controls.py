@@ -45,6 +45,8 @@ def main(destination):
 
     try:
         assert app.platformName() not in ('offscreen', 'minimal'), 'Native desktop required'
+        from accept_live_preview import verify_live_preview
+        report['live_preview'] = verify_live_preview(app, output/'live-preview')
         from accept_selector_coverage import verify_selector_coverage
         report['selector'] = verify_selector_coverage(app, output/'selector-coverage')
         pump(.5)

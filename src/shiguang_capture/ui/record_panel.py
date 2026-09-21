@@ -6,17 +6,29 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt, Signal
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import QEvent, QPointF, QTimer, Qt, Signal
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
                               QPushButton, QComboBox, QFileDialog, QLineEdit,
-                              QTabBar, QStackedWidget)
+                              QTabBar, QStackedWidget, QFrame)
 
 from ..recording.worker import RecordingOptions, record, probe_audio, probe_windows
-from .theme import STYLE
+from .record_style import RECORD_STYLE, LIBRARY_STYLE
+from .live_preview import LivePreview
 from .record_overlay import CountdownOverlay, RecordingOrb
 from .tool_icons import tool_icon
 from .record_library import RecordingLibrary
+
+
+class RecordingComboBox(QComboBox):
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor('#628BBC' if self.isEnabled() else '#A6B8CE'), 1.5))
+        x, y = self.width()-16, self.height()/2
+        painter.drawLine(QPointF(x-3, y-2), QPointF(x, y+1))
+        painter.drawLine(QPointF(x, y+1), QPointF(x+3, y-2))
 
 
 class RecordPanel(QWidget):
@@ -28,14 +40,9 @@ class RecordPanel(QWidget):
         super().__init__()
         self.setWindowTitle('拾光 · 录屏')
         self.setObjectName('workspace')
-        self.setStyleSheet(STYLE + """
-            QWidget#workspace {background:#FFFFFF;}
-            QPushButton#primary {background:#3188F5; border:0; border-radius:28px; color:white;}
-            QPushButton#primary:hover {background:#2179E7;}
-            QComboBox, QLineEdit {background:#F7FAFF; border:1px solid #DCE7F4; padding:10px; border-radius:6px;}
-        """)
-        self.setMinimumSize(860, 490)
-        self.resize(960, 540)
+        self.setStyleSheet(RECORD_STYLE)
+        self.setMinimumSize(900, 550)
+        self.resize(1080, 650)
         self.process = self.connection = None
         self.probe = self.probe_connection = None
         self.window_probe = self.window_connection = None
@@ -47,18 +54,19 @@ class RecordPanel(QWidget):
         self.current_path = None
         self.countdown = 0
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(20, 12, 20, 20)
+        outer.setContentsMargins(24, 14, 24, 22)
         outer.setSpacing(16)
         self.tabs = QTabBar()
         self.tabs.setExpanding(False)
+        self.tabs.setDrawBase(False)
         self.tabs.addTab('本地录制')
         self.tabs.addTab('录屏文件')
-        self.tabs.setStyleSheet('QTabBar::tab {padding:12px 20px; color:#657D8E;} QTabBar::tab:selected {color:#3188F5; border-bottom:3px solid #3188F5;}')
         outer.addWidget(self.tabs)
         self.pages = QStackedWidget()
         record_page = QWidget()
         self.pages.addWidget(record_page)
         self.library = RecordingLibrary()
+        self.library.setStyleSheet(LIBRARY_STYLE)
         self.pages.addWidget(self.library)
         outer.addWidget(self.pages, 1)
         self.tabs.currentChanged.connect(self._switch_page)
@@ -67,40 +75,42 @@ class RecordPanel(QWidget):
         layout.setSpacing(20)
         content = QHBoxLayout()
         content.setSpacing(28)
-        self.fields = QWidget()
+        self.fields = QWidget(objectName='recordFields')
         form = QFormLayout(self.fields)
         self.form = form
-        form.setContentsMargins(0, 0, 0, 0)
-        self.screen = QComboBox()
+        form.setContentsMargins(18, 22, 18, 22)
+        form.setVerticalSpacing(18)
+        self.screen = RecordingComboBox()
         for index, screen in enumerate(QGuiApplication.screens()):
             form_label = f'屏幕 {index + 1} · {screen.geometry().width()} × {screen.geometry().height()}'
             self.screen.addItem(form_label, screen.name())
         self.screen.currentIndexChanged.connect(self._clear_region)
         form.addRow('录制屏幕', self.screen)
-        self.region_button = QPushButton('选择区域…')
+        self.region_button = QPushButton('区域…')
         self.region_button.clicked.connect(self.choose_region.emit)
         full = QPushButton('全屏')
         full.clicked.connect(self._clear_region)
         bounds = QHBoxLayout()
+        bounds.setSpacing(6)
         bounds.addWidget(self.region_button, 1)
         bounds.addWidget(full)
         choose_window = QPushButton('窗口…')
         choose_window.clicked.connect(self._choose_window)
         bounds.addWidget(choose_window)
         form.addRow('范围', bounds)
-        self.audio = QComboBox()
+        self.audio = RecordingComboBox()
         for text, value in [('不录声音', 'none'), ('麦克风', 'mic'), ('系统声音', 'system'), ('系统声音 + 麦克风', 'both')]:
             self.audio.addItem(text, value)
         self.audio.currentIndexChanged.connect(self._audio_changed)
         form.addRow('声音', self.audio)
-        self.microphone, self.system_audio = QComboBox(), QComboBox()
+        self.microphone, self.system_audio = RecordingComboBox(), RecordingComboBox()
         form.addRow('麦克风', self.microphone)
         form.addRow('系统音源', self.system_audio)
         self.microphone.setEnabled(False)
         self.system_audio.setEnabled(False)
         form.setRowVisible(self.microphone, False)
         form.setRowVisible(self.system_audio, False)
-        self.fps = QComboBox()
+        self.fps = RecordingComboBox()
         for fps in (15, 30, 60):
             self.fps.addItem(f'{fps} fps', fps)
         self.fps.setCurrentIndex(1)
@@ -113,43 +123,50 @@ class RecordPanel(QWidget):
         browse.clicked.connect(self._choose_folder)
         folder_row.addWidget(browse)
         form.addRow('保存位置', folder_row)
-        self.fields.setFixedWidth(360)
+        self.fields.setFixedWidth(370)
         content.addWidget(self.fields)
-        preview_column = QVBoxLayout()
-        self.preview = QLabel('选择录制范围')
+        monitor = QFrame(objectName='liveMonitor')
+        preview_column = QVBoxLayout(monitor)
+        preview_column.setContentsMargins(16, 16, 16, 16)
+        monitor_header = QHBoxLayout()
+        self.preview_badge = QLabel('● 实时预览', objectName='monitorTitle')
+        self.preview_size = QLabel('', objectName='muted')
+        monitor_header.addWidget(self.preview_badge)
+        monitor_header.addStretch()
+        monitor_header.addWidget(self.preview_size)
+        preview_column.addLayout(monitor_header)
+        self.preview = QLabel('正在连接画面…')
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setMinimumSize(380, 250)
-        self.preview.setStyleSheet('background:#152337; color:#AABDD5; border-radius:10px;')
+        self.preview.setMinimumSize(360, 220)
+        self.preview.setWordWrap(True)
+        self.preview.setStyleSheet('background:#F0F5FC; color:#6986A7; border:0;')
         self.preview_image = None
         preview_column.addWidget(self.preview, 1)
-        refresh = QPushButton('刷新预览')
-        refresh.clicked.connect(self.refresh_preview)
-        preview_column.addWidget(refresh, 0, Qt.AlignmentFlag.AlignRight)
-        content.addLayout(preview_column, 1)
+        self.preview_scope = QLabel('全屏', objectName='muted')
+        preview_column.addWidget(self.preview_scope)
+        content.addWidget(monitor, 1)
         layout.addLayout(content, 1)
-        self.status = QLabel('')
+        self.status = QLabel('', objectName='recordStatus')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         buttons = QHBoxLayout()
         self.start_button = QPushButton('', objectName='primary')
         self.start_button.setIcon(tool_icon('play', '#FFFFFF'))
         self.start_button.setFixedSize(64, 64)
-        self.start_button.setStyleSheet('QPushButton#primary {background:#3188F5;border:0;border-radius:32px;padding:0;min-height:64px;max-height:64px;min-width:64px;max-width:64px;} QPushButton#primary:hover {background:#2179E7;} QPushButton#primary:disabled {background:#B8D5FA;}')
-        self.start_button.setFixedSize(64, 64)
-        self.start_button.setToolTip('开始录制 F6')
+        self.start_button.setToolTip('开始录制')
         self.start_button.setAccessibleName('开始录制')
         self.start_button.clicked.connect(self.toggle)
-        self.stop_button = QPushButton('')
-        self.stop_button.setIcon(tool_icon('stop', '#3188F5'))
-        self.stop_button.setToolTip('停止并保存 F7')
+        self.stop_button = QPushButton('', objectName='stopRecord')
+        self.stop_button.setIcon(tool_icon('stop', '#FF879E'))
+        self.stop_button.setToolTip('停止并保存')
+        self.stop_button.setAccessibleName('停止并保存')
         self.stop_button.setFixedSize(48, 48)
         self.stop_button.clicked.connect(self.stop)
         self.stop_button.setEnabled(False)
         buttons.addWidget(self.start_button)
         buttons.addWidget(self.stop_button)
         buttons.addSpacing(26)
-        self.elapsed = QLabel('00:00:00')
-        self.elapsed.setStyleSheet('font-family: "DejaVu Sans Mono"; font-size:38px; color:#3188F5;')
+        self.elapsed = QLabel('00:00:00', objectName='recordClock')
         buttons.addWidget(self.elapsed)
         buttons.addStretch()
         layout.addLayout(buttons)
@@ -178,6 +195,11 @@ class RecordPanel(QWidget):
         self.timer.setInterval(40)
         self.timer.timeout.connect(self._poll)
         self.timer.start()
+        self.live_preview = LivePreview(self)
+        self.live_preview.frame_ready.connect(self._preview_frame)
+        self.live_preview.failed.connect(self._preview_failed)
+        QGuiApplication.instance().aboutToQuit.connect(self.live_preview.stop)
+        self.destroyed.connect(self.live_preview.stop)
 
     def _refresh_library(self):
         self.library.set_folder(self.folder.text(), self.current_path if self.active else None)
@@ -191,32 +213,54 @@ class RecordPanel(QWidget):
         if index == 1:
             self._refresh_library()
         self.pages.setCurrentIndex(index)
+        self._sync_preview()
 
-    def refresh_preview(self):
-        if self.active:
+    def _sync_preview(self):
+        if not hasattr(self, 'live_preview'):
             return
-        self.hide()
-        QTimer.singleShot(160, self._capture_preview)
-
-    def _capture_preview(self):
-        if self.active:
+        if not self.isVisible() or self.isMinimized() or self.tabs.currentIndex() != 0:
+            self.live_preview.stop()
             return
-        screen = next((s for s in QGuiApplication.screens() if s.name() == self.screen.currentData()), QGuiApplication.primaryScreen())
-        if self.window_title:
+        if QGuiApplication.platformName() in ('offscreen', 'minimal'):
+            self.preview.setText('当前显示环境不支持实时预览')
+            return
+        target = (self.screen.currentData(), self.region, self.window_title)
+        if self.live_preview.target != target:
             self.preview_image = None
-            self.preview.setText('窗口 · '+self.window_title)
-            self.show()
-            return
-        if screen:
-            pixmap = screen.grabWindow(0)
-            if self.region:
-                x, y, w, h = self.region
-                density = pixmap.devicePixelRatio()
-                pixmap = pixmap.copy(round((x-screen.geometry().x())*density),
-                                     round((y-screen.geometry().y())*density), round(w*density), round(h*density))
-            self.preview_image = pixmap
-            self._fit_preview()
-        self.show()
+            self.preview.clear()
+            self.preview.setText('正在连接画面…')
+            self.preview_badge.setText('● 连接中')
+            self.preview_size.clear()
+        scope = ('窗口 · '+self.window_title if self.window_title else
+                 f'区域 · {self.region[2]} × {self.region[3]}' if self.region else self.screen.currentText())
+        self.preview_scope.setText(scope)
+        self.live_preview.start(*target)
+
+    def _preview_frame(self, image, source_size):
+        self.preview_image = QPixmap.fromImage(image)
+        self.preview_size.setText(f'{source_size[0]} × {source_size[1]}')
+        self.preview_badge.setText('● 实时预览')
+        self._fit_preview()
+
+    def _preview_failed(self, message):
+        self.preview_image = None
+        self.preview.clear()
+        self.preview.setText(message)
+        self.preview_badge.setText('○ 预览不可用')
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._sync_preview()
+
+    def hideEvent(self, event):
+        if hasattr(self, 'live_preview'):
+            self.live_preview.stop()
+        super().hideEvent(event)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            self._sync_preview()
 
     def _fit_preview(self):
         if self.preview_image and not self.preview_image.isNull():
@@ -236,11 +280,12 @@ class RecordPanel(QWidget):
     def _clear_region(self, *_):
         self.region = None
         self.window_title = None
-        self.region_button.setText('选择区域…')
+        self.region_button.setText('区域…')
         if hasattr(self, 'preview'):
             self.preview.clear()
-            self.preview.setText('刷新预览')
+            self.preview.setText('正在连接画面…')
             self.preview_image = None
+            self._sync_preview()
 
     def _choose_window(self):
         if self.window_probe:
@@ -263,7 +308,9 @@ class RecordPanel(QWidget):
         self.screen.setCurrentIndex(self.screen.findData(screen.name()))
         self.region = (rect.x, rect.y, rect.width, rect.height)
         self.window_title = None
-        self.region_button.setText(f'{rect.width} × {rect.height} · 重新选择')
+        self.region_button.setText('重选区域')
+        self.region_button.setToolTip(f'{rect.width} × {rect.height}')
+        self._sync_preview()
 
     def _choose_folder(self):
         path = QFileDialog.getExistingDirectory(self, '保存位置', self.folder.text())
@@ -345,7 +392,7 @@ class RecordPanel(QWidget):
         self.state = 'starting'
         self.started_deadline = time.monotonic() + 25
         self.recovery = None
-        self.stop_button.setToolTip('停止并保存 F7')
+        self.stop_button.setToolTip('停止并保存')
         self.stop_button.setText('')
         self.pause_button.setEnabled(False)
         self.clock.setText('● 准备中')
@@ -379,7 +426,7 @@ class RecordPanel(QWidget):
         self.start_button.setText('')
         self.start_button.setIcon(tool_icon('play', '#FFFFFF'))
         self.stop_button.setEnabled(False)
-        self.stop_button.setToolTip('停止并保存 F7')
+        self.stop_button.setToolTip('停止并保存')
         self.stop_button.setText('')
         self.bar.hide()
         self.countdown_overlay.hide()
@@ -400,8 +447,9 @@ class RecordPanel(QWidget):
                         title, accepted = QInputDialog.getItem(self, '选择录制窗口', '窗口', event['windows'], 0, False)
                         if accepted:
                             self.window_title, self.region = title, None
-                            self.region_button.setText('窗口 · ' + title[:20])
+                            self.region_button.setText('区域…')
                             self.region_button.setToolTip(title)
+                            self._sync_preview()
                         self.status.clear()
                     else:
                         self.status.setText(event.get('message', '没有可单独识别的窗口，请使用区域录屏。'))
@@ -471,7 +519,7 @@ class RecordPanel(QWidget):
             self.bar.set_state(kind)
             self.start_button.setEnabled(True)
             text = '继续' if kind == 'paused' else '暂停'
-            self.start_button.setToolTip(text+' F6')
+            self.start_button.setToolTip(text)
             self.start_button.setIcon(tool_icon('play' if kind == 'paused' else 'pause', '#FFFFFF'))
             if kind == 'paused':
                 self.clock.setText('Ⅱ 已暂停')
