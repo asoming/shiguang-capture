@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://asoming.github.io/shiguang-capture/sitemap.xml
