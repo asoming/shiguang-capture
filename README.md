@@ -1,9 +1,9 @@
-# 拾光 Capture 1.4.1
+# 拾光 Capture 1.4.2
 
 本地屏幕捕获与图片校对工具。截图、导入、标注、提取文字，再由你决定复制或保存。
 
-1.4.1 提供 Linux X11 x86_64、Windows x86_64 与 macOS arm64 安装包。
-1.4.1 修复系统收藏栏／任务栏未被截图遮罩覆盖的问题，并增加录屏文件列表，提供大小、修改时间及播放、打开文件夹、移到回收站操作。
+1.4.2 提供 Linux X11 x86_64、Windows x86_64 与 macOS arm64 安装包。
+1.4.2 启动直接进入设置，截图、录屏等快捷键支持按键录入、清除与恢复默认，保存立即生效。托盘菜单同步显示自定义快捷键。
 
 本版重新整理截图、录屏和识别交互：截图就地标注，录屏使用三秒全屏倒计时与贴边浮球，识别窗口只保留图片、结果和翻译。中英离线模型随包提供，无需上传图片或文字。
 
@@ -11,7 +11,7 @@
 
 ## 安装已发布稳定版
 
-在 [正式发布页](https://github.com/asoming/shiguang-capture/releases/tag/v1.4.1) 下载 Linux 压缩包与 SHA256SUMS，校验并解压，在解压目录运行：
+在 [正式发布页](https://github.com/asoming/shiguang-capture/releases/tag/v1.4.2) 下载 Linux 压缩包与 SHA256SUMS，校验并解压，在解压目录运行：
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
@@ -19,7 +19,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 ./install-linux.sh
 ```
 
-桌面与应用菜单中会出现 **拾光 Capture**。也可直接运行目录内的 `ShiguangCapture`，无需 Python、联网下载模型或账号。首次运行无需联网。安装位置为 `~/.local/share/shiguang-capture/1.4.1`，启动器为 `~/.local/bin/shiguang-capture`。关闭主窗口后驻留托盘；退出请用托盘菜单。
+桌面与应用菜单中会出现 **拾光 Capture**。也可直接运行目录内的 `ShiguangCapture`，无需 Python、联网下载模型或账号。首次运行无需联网。安装位置为 `~/.local/share/shiguang-capture/1.4.2`，启动器为 `~/.local/bin/shiguang-capture`。关闭主窗口后驻留托盘；退出请用托盘菜单。
 
 Windows：解压后运行 `ShiguangCapture.exe`，可运行 `install-windows.ps1` 创建桌面与开始菜单快捷方式。macOS：解压 `.app` 后移到应用程序目录；当前采用 ad-hoc 签名，未进行 Apple 公证。
 
@@ -44,6 +44,8 @@ Windows：解压后运行 `ShiguangCapture.exe`，可运行 `install-windows.ps1
 OCR 会有识别错误，置信度也不是正确率。代码符号、缩进、中文表格内容仍需人工校对。39 张合成图片的实测结果、原始输出和生成器全部公开；样本量不足以代替真实业务数据集。当前 PRD 的完整质量门槛尚未通过。
 
 截图默认只复制，不自动落盘。OCR 不自动覆盖剪贴板；保存需选择位置。清空会话清除当前图像与识别结果，不清理系统剪贴板、桌面贴图和已保存文件。
+
+在设置的「快捷键」页点击输入框后，直接按下组合键，再点击「保存」。Backspace 清除该快捷键，Esc 取消本次录入；可恢复默认。以下为默认值：
 
 | 快捷键 | 动作 |
 | --- | --- |
