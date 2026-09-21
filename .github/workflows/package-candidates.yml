@@ -77,6 +77,7 @@ jobs:
             @{ Name = 'self-test'; Arguments = @('--self-test') },
             @{ Name = 'translation-self-test'; Arguments = @('--translation-self-test') },
             @{ Name = 'recording-self-test'; Arguments = @('--recording-self-test') },
+            @{ Name = 'live-preview'; Arguments = @('--preview-desktop-test', 'artifacts/package-preview') },
             @{ Name = 'native-recording'; Arguments = @('--recording-desktop-test', 'artifacts/package-native') }
           )
           foreach ($check in $checks) {
@@ -97,6 +98,7 @@ jobs:
           dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --translation-self-test
           dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --self-test
           dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --recording-self-test
+          dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --preview-desktop-test artifacts/package-preview
           tar -czf dist/ShiguangCapture-macOS-arm64-preview.tar.gz -C dist ShiguangCapture.app
       - uses: actions/upload-artifact@v4
         if: success()
@@ -107,6 +109,7 @@ jobs:
             dist/ShiguangCapture-Windows-x86_64-preview.zip
             artifacts/package-tests/
             artifacts/package-native/
+            artifacts/package-preview/
           retention-days: 14
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -117,3 +120,4 @@ jobs:
             build/pyinstaller/ShiguangCapture/warn-ShiguangCapture.txt
             artifacts/package-tests/
             artifacts/package-native/
+            artifacts/package-preview/

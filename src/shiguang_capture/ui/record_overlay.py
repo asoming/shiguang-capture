@@ -2,7 +2,7 @@
 import math
 import time
 from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen, QRadialGradient
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen, QRadialGradient, QLinearGradient
 from PySide6.QtWidgets import QWidget, QToolButton, QLabel
 from .tool_icons import tool_icon
 
@@ -83,11 +83,14 @@ class RecordingOrb(QWidget):
         self.docked = None
         self._press = self._origin = None
         self._dragged = False
+        self.animation = QTimer(self)
+        self.animation.setInterval(40)
+        self.animation.timeout.connect(self.update)
         self.clock = QLabel('00:00', self)
-        self.clock.setStyleSheet('color:#647A98; background:transparent; font-size:11px;')
-        self.play = self._button('play', '开始 / 继续 F6', self.toggle_requested.emit)
-        self.pause = self._button('pause', '暂停 F6', self.toggle_requested.emit)
-        self.stop_button = self._button('stop', '停止并保存 F7', self.stop_requested.emit)
+        self.clock.setStyleSheet('color:#527397; background:transparent; font-family:"DejaVu Sans Mono","Consolas",monospace; font-size:11px;')
+        self.play = self._button('play', '继续录制', self.toggle_requested.emit)
+        self.pause = self._button('pause', '暂停录制', self.toggle_requested.emit)
+        self.stop_button = self._button('stop', '停止并保存', self.stop_requested.emit)
         self.resize(64, 64)
         screen = QGuiApplication.primaryScreen()
         if screen:
@@ -98,10 +101,10 @@ class RecordingOrb(QWidget):
 
     def _button(self, icon, title, callback):
         button = QToolButton(self)
-        button.setIcon(tool_icon(icon, '#287CEB'))
+        button.setIcon(tool_icon(icon, '#ED6D8C' if icon == 'stop' else '#3182E9'))
         button.setToolTip(title)
         button.setAccessibleName(title)
-        button.setStyleSheet('QToolButton {background:#EDF5FF;border:0;border-radius:18px;} QToolButton:hover {background:#D8EAFF;} QToolButton:disabled {background:#F2F4F8;}')
+        button.setStyleSheet('QToolButton {background:#E6F1FF;border:1px solid #C6DEF9;border-radius:18px;} QToolButton:hover {background:#D2E8FF;border-color:#7BBAF0;} QToolButton:pressed {background:#BCDDFE;} QToolButton:disabled {background:#EDF2F8;border-color:#DEE7F2;} QToolButton:focus {border:2px solid #9AE7FF;}')
         button.clicked.connect(callback)
         return button
 
@@ -110,7 +113,24 @@ class RecordingOrb(QWidget):
         self.play.setEnabled(state == 'paused')
         self.pause.setEnabled(state == 'recording')
         self.stop_button.setEnabled(state in ('starting', 'recording', 'paused'))
+        self.setToolTip({'starting': '准备录制', 'recording': '录制中 · 点击展开',
+                         'paused': '已暂停 · 点击展开', 'saving': '正在保存'}.get(state, '录制控制'))
+        self._animate_if_needed()
         self.update()
+
+    def _animate_if_needed(self):
+        if self.isVisible() and self.state in ('starting', 'recording', 'saving'):
+            self.animation.start()
+        else:
+            self.animation.stop()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._animate_if_needed()
+
+    def hideEvent(self, event):
+        self.animation.stop()
+        super().hideEvent(event)
 
     def _layout(self):
         for index, button in enumerate((self.play, self.pause, self.stop_button)):
@@ -180,25 +200,46 @@ class RecordingOrb(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(Qt.PenStyle.NoPen)
         if self.expanded:
-            p.setBrush(QColor('#FFFFFF'))
+            p.setPen(QPen(QColor('#BCD7F2'), 1))
+            p.setBrush(QColor(249, 253, 255, 250))
             p.drawRoundedRect(QRectF(1, 1, self.width()-2, 62), 31, 31)
         x = -30 if self.docked == 'left' else (2 if self.docked == 'right' else 2)
-        p.setBrush(QColor('#3188F5'))
+        p.setPen(Qt.PenStyle.NoPen)
+        glow = QRadialGradient(x+30, 32, 32)
+        glow.setColorAt(0, QColor(40, 156, 255, 200))
+        glow.setColorAt(.8, QColor(40, 156, 255, 90))
+        glow.setColorAt(1, QColor(40, 156, 255, 0))
+        p.setBrush(glow)
+        p.drawEllipse(QRectF(x-2, 0, 64, 64))
+        body = QLinearGradient(x+5, 5, x+51, 62)
+        body.setColorAt(0, QColor('#61D9FF'))
+        body.setColorAt(.42, QColor('#338BFA'))
+        body.setColorAt(1, QColor('#193FAD'))
+        p.setBrush(body)
         p.drawEllipse(QRectF(x, 2, 60, 60))
         if self.docked:
+            p.setPen(QPen(QColor('#B2EDFF'), 2))
+            p.drawArc(QRectF(x+6, 8, 48, 48), 45*16, 180*16)
             return
-        p.setPen(QPen(QColor('#AFDFFF'), 2))
+        p.setPen(QPen(QColor(201, 237, 255, 90), 1))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QRectF(9, 9, 46, 46))
+        paused = self.state == 'paused'
+        angle = 90 if paused else int(time.monotonic()*90) % 360
+        p.setPen(QPen(QColor('#FFE0A1' if paused else '#D9FAFF'), 2.5,
+                      Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.drawArc(QRectF(9, 9, 46, 46), angle*16, 105*16)
+        p.setPen(QPen(QColor(150, 235, 255, 110), 2))
+        p.drawArc(QRectF(9, 9, 46, 46), (angle+180)*16, 50*16)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor('white'))
-        if self.state == 'paused':
+        if paused:
             p.drawRoundedRect(QRectF(24, 23, 5, 18), 2, 2)
             p.drawRoundedRect(QRectF(35, 23, 5, 18), 2, 2)
         else:
-            p.drawEllipse(QRectF(25, 25, 14, 14))
+            radius = 7 + (math.sin(time.monotonic()*3)*.7 if self.state == 'recording' else 0)
+            p.drawEllipse(QRectF(32-radius, 32-radius, radius*2, radius*2))
 
     def closeEvent(self, event):
         self.stop_requested.emit()
