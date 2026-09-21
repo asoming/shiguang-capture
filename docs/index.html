@@ -1,1 +1,201 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>把画面，留给下一步。 · 拾光 Capture</title><link rel="stylesheet" href="assets/site.css"></head><body><nav><strong>拾光 / CAPTURE</strong><a href="index.html">概览</a><a href="features.html">功能与边界</a><a href="pricing.html">开源与免费</a><a href="download.html">获取</a></nav><main><header><h1>把画面，留给下一步。</h1><p>截图或打开图片，标注、提取文字，对照原图校对后再复制。</p></header><div class="grid"><section><h2>原图与结果并排</h2><p>图片保留在左侧，可编辑文字放在右侧。识别完成不会自动改写剪贴板。</p></section><section><h2>明确的保存动作</h2><p>确认截图只复制。点击保存才写入文件，标注随图片合并。</p></section><section><h2>本地识别</h2><p>RapidOCR 在本机独立进程中处理。支持取消、超时恢复与空闲资源释放。</p></section></div><p class="note">v1.4.3：支持简单表格校对、代码可见缩进及文本型 XLSX。识别结果仍需人工核对。</p></main><footer>本地处理 · 手动复制与保存 · Linux · Windows · macOS · v1.4.3<br>© 拾光 Capture · MIT</footer><script src="assets/site.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>拾光 Capture — 截图、录屏与离线文字识别</title>
+<meta name="description" content="截图就地标注，白色录制台与蓝色悬浮球，中英离线识别与翻译。拾光 Capture 是免费的开源桌面屏幕捕获工具。">
+<meta name="theme-color" content="#F8FBFF">
+<meta name="color-scheme" content="light">
+<link rel="canonical" href="https://asoming.github.io/shiguang-capture/">
+<link rel="alternate" hreflang="zh-CN" href="https://asoming.github.io/shiguang-capture/">
+<link rel="alternate" hreflang="en" href="https://asoming.github.io/shiguang-capture/en/">
+<link rel="alternate" hreflang="x-default" href="https://asoming.github.io/shiguang-capture/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="拾光 Capture — 截图、录屏与离线文字识别">
+<meta property="og:description" content="截图就地标注，白色录制台与蓝色悬浮球，中英离线识别与翻译。拾光 Capture 是免费的开源桌面屏幕捕获工具。">
+<meta property="og:url" content="https://asoming.github.io/shiguang-capture/">
+<meta property="og:image" content="https://asoming.github.io/shiguang-capture/assets/social.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/icon-32.png">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js" defer>
+</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到内容</a>
+<header class="site-header wrap">
+<a class="brand" href="./">
+<img src="assets/icon-64.png" width="34" height="34" alt="">
+<strong>拾光</strong>
+<span>Capture</span>
+</a>
+<nav aria-label="主导航">
+<a href="#features">功能</a>
+<a href="#download">下载</a>
+<a href="en/" lang="en">English</a>
+<a href="https://github.com/asoming/shiguang-capture">GitHub <span aria-hidden="true">↗</span>
+</a>
+</nav>
+</header>
+<main id="main">
+<section class="hero wrap">
+<p class="eyebrow">屏幕上的片刻，也可以接着用。</p>
+<h1>截下这一刻，<br>
+<span>接着做下一步。</span>
+</h1>
+<p class="lead">截图、标注，或录下完整过程。<br>把图片里的文字取出来，留在本机继续编辑。</p>
+<div class="actions">
+<a class="button" href="#download">下载拾光 Capture <span aria-hidden="true">↓</span>
+</a>
+<a class="text-link" href="#demo">看看悬浮球演示 <span aria-hidden="true">↗</span>
+</a>
+</div>
+<p class="platforms">Windows · macOS · Linux　/　免费开源 · 无需账号</p>
+<figure class="hero-product">
+<div class="capture-frame">
+<img src="assets/recording.png" width="1620" height="975" alt="拾光真实录制台界面：录制设置、示例演示文稿预览和开始按钮" fetchpriority="high">
+</div>
+<figcaption>白色录制台 · 连续实时预览 · 此图使用示例内容</figcaption>
+</figure>
+</section>
+<section class="wrap section" id="features">
+<div class="section-heading">
+<p class="eyebrow">少切换，顺手完成</p>
+<h2>从截图，到可以使用的内容。</h2>
+<p>标注直接在选区完成。需要识别文字时，再打开左右对照的工作台。</p>
+</div>
+<div class="feature-grid">
+<article>
+<span class="index">01</span>
+<h3>截下，直接标注。</h3>
+<p>箭头、矩形、画笔和遮盖。文字写完还能点回去修改，复制或保存都在选区工具条里。</p>
+</article>
+<article>
+<span class="index">02</span>
+<h3>图片变成可编辑文字。</h3>
+<p>离线识别中英文、代码与简单表格。左边看原图，右边校对；需要翻译时，再展开原文与译文。</p>
+</article>
+<article>
+<span class="index">03</span>
+<h3>按自己的习惯操作。</h3>
+<p>截图、取色、贴图和录屏快捷键都能修改。打开设置，按下你想用的组合键，保存即可。</p>
+</article>
+<article>
+<span class="index">04</span>
+<h3>内容留在自己的电脑。</h3>
+<p>OCR 和中英翻译在本机运行，模型随包提供。截图默认只复制，保存与导出由你决定。</p>
+</article>
+</div>
+<figure class="workbench">
+<img src="assets/recognition.png" width="1620" height="1050" loading="lazy" alt="真实识别工作台：左侧示例英文图片，右侧原文和中文译文">
+<figcaption>真实应用界面 · 示例文字与译文用于展示布局，识别结果需校对</figcaption>
+</figure>
+</section>
+<section class="record-section" id="demo">
+<div class="wrap record-layout">
+<div>
+<p class="eyebrow">录制时，界面退后一步</p>
+<h2>一个蓝色浮球，<br>控制整段录制。</h2>
+<p>选好屏幕、区域或窗口，三秒倒计时后开始。点击浮球展开继续、暂停和停止；拖到屏幕边缘，就收成蓝色半圆。</p>
+<p class="small">录屏文件页集中显示文件大小与时间，可播放、删除或打开所在文件夹。</p>
+</div>
+<div class="orb-stage">
+<div class="orb-orbit">
+<img id="orb-demo" src="assets/orb.png" data-still="assets/orb.png" data-animation="assets/orb-demo.gif" width="436" height="128" alt="真实应用悬浮球动效">
+</div>
+<button class="demo-button" type="button" aria-controls="orb-demo" aria-pressed="false" data-play="播放悬浮球动效" data-stop="停止动效">播放悬浮球动效</button>
+<noscript>
+<p>
+<a href="assets/orb-demo.gif">播放悬浮球动效</a>
+</p>
+</noscript>
+</div>
+</div>
+</section>
+<section class="wrap section download-section" id="download">
+<div class="section-heading">
+<p class="eyebrow">SHIGUANG CAPTURE / v1.4.3</p>
+<h2>把拾光放进你的桌面。</h2>
+<p>选择对应系统。安装包包含 OCR 与中英离线翻译模型。</p>
+</div>
+<div class="download-grid">
+<article>
+<span class="os-symbol" aria-hidden="true">⊞</span>
+<h3>Windows x86_64</h3>
+<p>解压后运行 ShiguangCapture.exe</p>
+<a class="button secondary" href="https://github.com/asoming/shiguang-capture/releases/download/v1.4.3/ShiguangCapture-v1.4.3-Windows-x86_64.zip">下载 .zip <span aria-hidden="true">↓</span>
+</a>
+</article>
+<article>
+<span class="os-symbol" aria-hidden="true">⌘</span>
+<h3>macOS arm64</h3>
+<p>Apple Silicon · 解压后移入应用程序</p>
+<a class="button secondary" href="https://github.com/asoming/shiguang-capture/releases/download/v1.4.3/ShiguangCapture-v1.4.3-macOS-arm64.tar.gz">下载 .tar.gz <span aria-hidden="true">↓</span>
+</a>
+</article>
+<article>
+<span class="os-symbol" aria-hidden="true">›_</span>
+<h3>Linux x86_64</h3>
+<p>X11 · 解压后运行 install-linux.sh</p>
+<a class="button secondary" href="https://github.com/asoming/shiguang-capture/releases/download/v1.4.3/ShiguangCapture-v1.4.3-Linux-x86_64.tar.gz">下载 .tar.gz <span aria-hidden="true">↓</span>
+</a>
+</article>
+</div>
+<div class="download-links">
+<a href="https://github.com/asoming/shiguang-capture/releases/latest">全部版本与发行说明 ↗</a>
+<a href="https://github.com/asoming/shiguang-capture/blob/main/guides/REFERENCE.md#安装已发布稳定版">安装、快捷键与详细说明 ↗</a>
+<a href="https://github.com/asoming/shiguang-capture/releases/download/v1.4.3/SHA256SUMS">校验文件 SHA256SUMS ↗</a>
+</div>
+<p class="small language-note">网站提供中英文介绍；当前应用界面以中文为主。</p>
+<aside class="compatibility">
+<strong>安装与兼容性</strong>
+<p>Windows 包未签名；macOS 使用临时签名，尚未公证。当前 macOS 录屏帧率可能偏低，系统声音尚未通过验收。Linux 面向 X11；多物理屏幕与部分权限恢复行为仍待实机验证。 <a href="https://github.com/asoming/shiguang-capture/blob/main/validation/PRD-ACCEPTANCE.md">查看逐项验收记录 ↗</a>
+</p>
+</aside>
+</section>
+<section class="wrap faq section">
+<h2>你可能想知道。</h2>
+<div>
+<details>
+<summary>可以断网使用吗？</summary>
+<p>可以。已发布安装包自带 OCR 和中英翻译模型，无需账号或额外下载模型。网站演示使用的是示例内容。</p>
+</details>
+<details>
+<summary>截图后一定要打开工作台吗？</summary>
+<p>不用。框选后直接标注、复制、保存或贴图；只有提取文字、代码或表格时才打开识别工作台。</p>
+</details>
+<details>
+<summary>能识别所有表格吗？</summary>
+<p>目前适用于有完整边框、无合并单元格的简单表格，最多 30 行 × 12 列。复杂表格和滚动长截图有使用限制，结果请人工校对。</p>
+</details>
+<details>
+<summary>怎样修改快捷键？</summary>
+<p>启动后进入设置的「快捷键」页，点击输入框，按下新组合键再保存。默认 F1 截图、F6 打开录屏或暂停/继续、F7 停止保存。</p>
+</details>
+<details>
+<summary>退出窗口后为什么还在运行？</summary>
+<p>关闭窗口后会驻留托盘，方便随时使用快捷键。要完全退出，请使用托盘菜单。</p>
+</details>
+</div>
+</section>
+</main>
+<footer class="wrap">
+<div>
+<a class="brand" href="https://github.com/asoming/shiguang-capture">
+<img src="assets/icon-64.png" width="30" height="30" alt="">
+<strong>拾光 Capture</strong>
+</a>
+<p>屏幕捕获 · 本地识别 · 手动保存</p>
+</div>
+<div class="footer-links">
+<a href="https://github.com/asoming/shiguang-capture/issues">反馈问题</a>
+<a href="https://github.com/asoming/shiguang-capture">GitHub 源码</a>
+<a href="https://github.com/asoming/shiguang-capture/blob/main/THIRD_PARTY_NOTICES.md">许可与第三方声明</a>
+</div>
+<p class="copyright">© 2026 Shiguang Capture · MIT</p>
+</footer>
+</body>
+</html>
