@@ -6,6 +6,7 @@ import os
 import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from .shortcuts import normalize_shortcut
 
 APP_DIR_NAME = "shiguang-capture"
 
@@ -30,7 +31,9 @@ class HotkeyConfig:
         seen: dict[str, str] = {}
         out: list[tuple[str, str]] = []
         for action, key in asdict(self).items():
-            norm = "+".join(sorted(part.strip() for part in key.lower().split("+") if part.strip()))
+            if not key.strip():
+                continue
+            norm = normalize_shortcut(key)
             if norm in seen:
                 out.append((seen[norm], action))
             else:

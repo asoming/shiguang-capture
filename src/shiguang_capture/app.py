@@ -101,12 +101,13 @@ class AppController:
             (self.tray.action_restore_pins, self.restore_pins),
             (self.tray.action_settings, self.open_settings),
             (self.tray.action_open, self.open_image),
-            (self.tray.action_workspace, self.open_launcher),
+            (self.tray.action_workspace, self.open_settings),
             (self.tray.action_quit, self.shutdown),
         ]:
             signal.connect(callback)
         self.tray.action_check_update.connect(lambda: self.check_updates(manual=True))
         self.tray.show()
+        self.tray.update_hotkeys(self.config.hotkeys)
         self.hotkeys = HotkeyManager()
         self.hotkeys.bridge.triggered.connect(self._on_hotkey)
         self._register_hotkeys()
@@ -141,8 +142,11 @@ class AppController:
                     pin.move(available.topLeft())
 
     def _register_hotkeys(self):
-        if self.config.hotkeys.conflicts():
-            self.tray.notify('拾光 Capture', '配置中的快捷键重复，请在设置中修改。托盘菜单仍可使用。')
+        try:
+            if self.config.hotkeys.conflicts():
+                raise ValueError('重复快捷键')
+        except ValueError:
+            self.tray.notify('拾光 Capture', '配置中的快捷键无效或重复，请在设置中修改。托盘菜单仍可使用。')
             return False
         registered = self.hotkeys.register(vars(self.config.hotkeys))
         if not registered:
@@ -150,6 +154,9 @@ class AppController:
         return registered
 
     def _on_hotkey(self, action):
+        from .ui.hotkey_edit import HotkeyEdit
+        if isinstance(self.app.focusWidget(), HotkeyEdit):
+            return
         actions = {'capture_region': self.start_region_capture, 'capture_fullscreen': self.capture_fullscreen,
                    'capture_scroll': self.start_scroll_capture, 'pin_last': self.pin_from_clipboard,
                    'color_picker': self.start_color_pick, 'hide_all_pins': self.toggle_pins,
@@ -643,6 +650,7 @@ class AppController:
             self._error('设置保存失败，原设置已保留。')
             return
         self.config = config
+        self.tray.update_hotkeys(config.hotkeys)
         if config.launch_at_login != autostart.is_enabled() and not autostart.set_enabled(config.launch_at_login):
             self._error('设置已保存，但当前系统未能启用开机启动。')
         if self._settings:
@@ -702,5 +710,5 @@ def main(argv=None):
     app.setApplicationName('shiguang-capture')
     app.setQuitOnLastWindowClosed(False)
     controller = AppController(app)
-    controller.open_launcher()
+    controller.open_settings()
     return app.exec()

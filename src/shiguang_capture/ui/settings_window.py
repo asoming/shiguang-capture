@@ -10,11 +10,13 @@ from .theme import STYLE
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QSlider, QTabWidget, QVBoxLayout, QWidget,
+    QLabel, QLineEdit, QPushButton, QScrollArea, QSlider, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from .. import __app_name__, __version__
-from ..config import AppConfig
+from ..config import AppConfig, HotkeyConfig
+from ..shortcuts import normalize_shortcut
+from .hotkey_edit import HotkeyEdit
 from ..updater import RELEASES_PAGE
 from .icon import make_icon
 
@@ -44,7 +46,7 @@ class SettingsWindow(QDialog):
         self.setWindowTitle(f"{__app_name__} · 设置")
         self.setWindowIcon(make_icon())
         self.setMinimumWidth(680)
-        self.resize(740, 560)
+        self.resize(780, 680)
         self.setModal(False)
 
         root = QVBoxLayout(self)
@@ -52,7 +54,7 @@ class SettingsWindow(QDialog):
         root.setSpacing(18)
         tabs = QTabWidget()
         tabs.addTab(self._build_general(), "常规")
-        tabs.addTab(self._build_hotkeys(), "热键")
+        tabs.addTab(self._build_hotkeys(), "快捷键")
         tabs.addTab(self._build_pin_picker(), "贴图与取色")
         tabs.addTab(self._build_ocr(), "识别")
         tabs.addTab(self._build_about(), "关于与更新")
@@ -113,21 +115,33 @@ class SettingsWindow(QDialog):
     def _build_hotkeys(self) -> QWidget:
         w = QWidget()
         form = QFormLayout(w)
-        self._hotkey_edits: dict[str, QLineEdit] = {}
+        self._hotkey_edits: dict[str, HotkeyEdit] = {}
         for attr, label in _HOTKEY_FIELDS:
-            edit = QLineEdit(getattr(self._config.hotkeys, attr))
-            edit.setPlaceholderText("如 f1 / ctrl+f1 / shift+alt+a")
+            edit = HotkeyEdit(getattr(self._config.hotkeys, attr))
+            edit.setAccessibleName(label + '快捷键')
             self._hotkey_edits[attr] = edit
             form.addRow(label, edit)
         self.hotkey_warn = QLabel("")
         self.hotkey_warn.setStyleSheet("color:#ff6b6e")
         self.hotkey_warn.setWordWrap(True)
         form.addRow(self.hotkey_warn)
-        hint = QLabel("修饰键：ctrl / shift / alt；功能键：f1-f12；用 + 连接。保存时自动检测冲突。")
+        hint = QLabel("点击输入框后按下组合键。Backspace 清除，Esc 取消修改；保存后立即生效。")
         hint.setStyleSheet("color:#888")
         hint.setWordWrap(True)
         form.addRow(hint)
-        return w
+        reset = QPushButton('恢复默认快捷键')
+        reset.clicked.connect(self._reset_hotkeys)
+        form.addRow(reset)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(w)
+        return scroll
+
+    def _reset_hotkeys(self):
+        defaults = HotkeyConfig()
+        for attr, edit in self._hotkey_edits.items():
+            edit.setText(getattr(defaults, attr))
+        self.hotkey_warn.clear()
 
     # ================= 贴图与取色 =================
     def _build_pin_picker(self) -> QWidget:
@@ -185,8 +199,7 @@ class SettingsWindow(QDialog):
         form.addRow("翻译引擎", row)
 
         note = QLabel(
-            "隐私红线：选择本地引擎时，识别与翻译全程在本机完成，不上传任何图像或文本。\n"
-            "翻译为实验能力。未单独安装 Argos 和语言模型时，只提供术语替换；本界面不会自动下载模型。"
+            "识别与中英翻译在本机完成，不上传图像或文本。"
         )
         note.setWordWrap(True)
         note.setStyleSheet("color:#888")
@@ -197,8 +210,12 @@ class SettingsWindow(QDialog):
     def _refresh_translate_status(self) -> None:
         """检测翻译后端可用性并回显。"""
         try:
+            from ..offline_translation import available
             from ..translate import argos_available
 
+            if available():
+                self.translate_status.setText('离线中英翻译已就绪')
+                return
             if argos_available():
                 self.translate_status.setText("✅ 离线神经翻译已就绪（argos-local）")
                 return
@@ -251,11 +268,18 @@ class SettingsWindow(QDialog):
         cfg.target_lang = self.lang_combo.currentData()
         cfg.allow_cloud_translate = False
         for attr, edit in self._hotkey_edits.items():
-            setattr(cfg.hotkeys, attr, edit.text().strip().lower() or getattr(cfg.hotkeys, attr))
+            try:
+                setattr(cfg.hotkeys, attr, normalize_shortcut(edit.text()))
+            except ValueError:
+                self.hotkey_warn.setText(f'{dict(_HOTKEY_FIELDS)[attr]}：请重新按下快捷键。')
+                self._switch_to_tab(1)
+                edit.setFocus()
+                return
 
         conflicts = cfg.hotkeys.conflicts()
         if conflicts:
-            names = "、".join(f"{a} ↔ {b}" for a, b in conflicts)
+            labels = dict(_HOTKEY_FIELDS)
+            names = "、".join(f"{labels[a]} ↔ {labels[b]}" for a, b in conflicts)
             self.hotkey_warn.setText(f"热键冲突：{names}。请修改后重新保存。")
             self.status.setText("设置未保存，原快捷键仍可使用。")
             self._switch_to_tab(1)

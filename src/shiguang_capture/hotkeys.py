@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QObject, Signal
+from .shortcuts import normalize_shortcut
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class HotkeyManager:
     @staticmethod
     def _to_pynput(key: str) -> str:
         """'ctrl+f1' -> '<ctrl>+<f1>'"""
-        parts = [p.strip() for p in key.lower().split("+") if p.strip()]
+        parts = normalize_shortcut(key).split('+')
         return "+".join(f"<{p}>" if len(p) > 1 or p in ("f1", "f2", "f3") else p for p in parts)
 
     def register(self, mapping: dict[str, str]) -> bool:
@@ -74,6 +75,8 @@ class HotkeyManager:
         try:
             actions = {}
             for action, key in mapping.items():
+                if not key.strip():
+                    continue
                 chord = frozenset(keyboard.HotKey.parse(self._to_pynput(key)))
                 if not chord or chord in actions:
                     raise ValueError("快捷键为空或重复")

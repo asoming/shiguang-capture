@@ -84,13 +84,13 @@ jobs:
           stage/ShiguangCapture/ShiguangCapture --self-test > evidence/linux/ocr.log
           stage/ShiguangCapture/ShiguangCapture --translation-self-test > evidence/linux/translation.log
           stage/ShiguangCapture/ShiguangCapture --recording-self-test > evidence/linux/recording.log
-          test "$(cat stage/ShiguangCapture/VERSION)" = '1.4.1'
+          test "$(cat stage/ShiguangCapture/VERSION)" = '1.4.2'
       - name: Assemble packages and evidence
         run: |
           mkdir -p release
-          tar -czf release/ShiguangCapture-v1.4.1-Linux-x86_64.tar.gz -C stage ShiguangCapture
-          cp stage/packages/package-candidate-windows-2025/dist/ShiguangCapture-Windows-x86_64-preview.zip release/ShiguangCapture-v1.4.1-Windows-x86_64.zip
-          cp stage/packages/package-candidate-macos-14/dist/ShiguangCapture-macOS-arm64-preview.tar.gz release/ShiguangCapture-v1.4.1-macOS-arm64.tar.gz
+          tar -czf release/ShiguangCapture-v1.4.2-Linux-x86_64.tar.gz -C stage ShiguangCapture
+          cp stage/packages/package-candidate-windows-2025/dist/ShiguangCapture-Windows-x86_64-preview.zip release/ShiguangCapture-v1.4.2-Windows-x86_64.zip
+          cp stage/packages/package-candidate-macos-14/dist/ShiguangCapture-macOS-arm64-preview.tar.gz release/ShiguangCapture-v1.4.2-macOS-arm64.tar.gz
           cp -R stage/packages/package-candidate-windows-2025/artifacts evidence/windows-package
           cp validation/PRD-ACCEPTANCE.md evidence/
           python - <<'PY'
@@ -99,7 +99,7 @@ jobs:
           packages = []
           for path in sorted(root.iterdir()):
               packages.append({'file': path.name, 'bytes': path.stat().st_size, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
-          manifest = {'version': '1.4.1', 'source_sha': os.environ['SOURCE_SHA'], 'release_commit': os.environ['GITHUB_SHA'], 'packages': packages,
+          manifest = {'version': '1.4.2', 'source_sha': os.environ['SOURCE_SHA'], 'release_commit': os.environ['GITHUB_SHA'], 'packages': packages,
                       'workflows': {key: f'https://github.com/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{os.environ[key]}' for key in ('CI_RUN','PACKAGES_RUN','NATIVE_RUN')},
                       'known_limitations': 'See release notes and PRD-ACCEPTANCE.md; macOS native FPS is not a release blocker and is not counted as passed.'}
           (root/'build-manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
@@ -108,13 +108,13 @@ jobs:
           PY
       - name: Create reviewable release draft
         run: |
-          if gh release view v1.4.1 --json isDraft > release-state.json 2>/dev/null; then
+          if gh release view v1.4.2 --json isDraft > release-state.json 2>/dev/null; then
             python -c "import json; assert json.load(open('release-state.json'))['isDraft'], 'Refusing to replace a published release'"
-            gh release edit v1.4.1 --target "$GITHUB_SHA" --title '拾光 Capture v1.4.1' --notes-file validation/RELEASE-1.4.1.md
+            gh release edit v1.4.2 --target "$GITHUB_SHA" --title '拾光 Capture v1.4.2' --notes-file validation/RELEASE-1.4.2.md
           else
-            gh release create v1.4.1 --draft --target "$GITHUB_SHA" --title '拾光 Capture v1.4.1' --notes-file validation/RELEASE-1.4.1.md
+            gh release create v1.4.2 --draft --target "$GITHUB_SHA" --title '拾光 Capture v1.4.2' --notes-file validation/RELEASE-1.4.2.md
           fi
-          gh release upload v1.4.1 release/* --clobber
+          gh release upload v1.4.2 release/* --clobber
       - uses: actions/upload-artifact@v4
         with:
           name: release-manifest
