@@ -69,7 +69,7 @@ class ScrollCaptureSession(QObject):
         self._running = True
         self.progressed.emit(first.shape[0], 1)
         self._emit_preview()
-        self.hint_changed.emit('向下滚动')
+        self.hint_changed.emit('手动滚动')
         self.frame_captured.emit()
         self._schedule()
 
@@ -81,6 +81,15 @@ class ScrollCaptureSession(QObject):
         """Stop immediately and retain the last successfully stitched content."""
         if self._running:
             self._finish()
+
+    def cancel(self):
+        """Dismiss the session without delivering or copying a partial image."""
+        if self._running:
+            self._running = False
+            self._timer.stop()
+            self._frame_timer.stop()
+            self._acc = self._prev_frame = None
+            self.aborted.emit()
 
     def complete(self):
         """Collect the final visible frame before delivering the long image."""
@@ -112,7 +121,7 @@ class ScrollCaptureSession(QObject):
         regions = [(0, 0, width, height)]
         for rect in excluded:
             # Some desktop compositors add a shadow outside the preview window.
-            pad_x, pad_y = (int(12*sx)+4, int(12*sy)+4) if rect == self.excluded_rect else (4, 4)
+            pad_x, pad_y = (int(12*sx)+4, int(12*sy)+4) if rect.width > 4 and rect.height > 4 else (4, 4)
             left = max(0, min(width, int((rect.x-self._rect.x)*sx)-pad_x))
             top = max(0, min(height, int((rect.y-self._rect.y)*sy)-pad_y))
             right = max(0, min(width, int((rect.right-self._rect.x)*sx)+pad_x))
@@ -189,7 +198,7 @@ class ScrollCaptureSession(QObject):
             self._frames += 1
             self.progressed.emit(height, self._frames)
             self._emit_preview()
-            self.hint_changed.emit('向下滚动')
+            self.hint_changed.emit('手动滚动')
         if self._completing or (self._max_frames is not None and self._frames >= self._max_frames):
             self._finish()
         else:

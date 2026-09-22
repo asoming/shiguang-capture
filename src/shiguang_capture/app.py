@@ -424,15 +424,23 @@ class AppController:
         session.hint_changed.connect(preview.status.setText)
         session.finished.connect(lambda image: self._on_scroll_finished(image, preview))
         session.failed.connect(lambda msg: self._on_scroll_failed(msg, preview))
-        preview.abort_requested.connect(session.abort)
-        preview.save_requested.connect(session.complete)
+        preview.abort_requested.connect(session.cancel)
+        session.aborted.connect(preview.close)
+        def finish_as(action):
+            preview.finish_action = action
+            session.complete()
+        preview.edit_requested.connect(lambda: finish_as('edit'))
+        preview.export_requested.connect(lambda: finish_as('save'))
+        preview.save_requested.connect(lambda: finish_as('copy'))
         self._scroll_session, self._scroll_preview = session, preview
         # Anchor to the screen containing the selection, including negative origins.
         screen = QGuiApplication.screenAt(QPoint(rect.x+rect.width//2, rect.y+rect.height//2)) or QGuiApplication.primaryScreen()
         if screen:
             area = screen.availableGeometry()
-            preview.anchor_to(rect, Rect(area.x(), area.y(), area.width(), area.height()))
-        session.excluded_borders = preview.selection_frame.rectangles
+            desktops = [s.geometry() for s in QGuiApplication.screens()]
+            preview.anchor_to(rect, Rect(area.x(), area.y(), area.width(), area.height()),
+                              [Rect(g.x(), g.y(), g.width(), g.height()) for g in desktops])
+        session.excluded_borders = preview.capture_exclusions
         session.excluded_rect = Rect(preview.x(), preview.y(), preview.width(), preview.height())
         # First capture is clean; subsequent polling never controls user input.
         session.start()
@@ -441,8 +449,13 @@ class AppController:
         preview.close()
         if self._closing:
             return
-        self.edit_image(image)
-
+        if preview.finish_action == 'save':
+            self.save_as(image)
+        elif preview.finish_action == 'copy':
+            write_image(image)
+            self.tray.notify('拾光 Capture', '长截图已复制。')
+        else:
+            self.edit_image(image)
 
     def _on_scroll_failed(self, message, preview):
         self._error(message)

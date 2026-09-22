@@ -303,8 +303,28 @@ def test_manual_scroll_preview_visible_while_waiting_for_user(controller, monkey
     assert session.is_running
     assert preview.isVisible()
     assert session.excluded_rect is not None
-    assert session.excluded_borders == preview.selection_frame.rectangles
+    assert session.excluded_borders == preview.capture_exclusions
     assert all(edge.isVisible() for edge in preview.selection_frame.edges)
     session.frame_capturing.emit()
-    assert not preview.isVisible()
+    assert preview.isVisible()  # Below this short selection, so it stays on screen.
+    assert not preview.selection_frame.badge.isVisible()
     session.abort()
+
+
+@pytest.mark.parametrize('action,expected', [('edit', 'edit'), ('export', 'save'), ('save', 'copy'), ('abort', None)])
+def test_scroll_toolbar_actions_deliver_only_requested_result(controller, monkeypatch, action, expected):
+    import shiguang_capture.app as app_module
+    import shiguang_capture.capture.scroller as scroll_module
+    monkeypatch.setattr(scroll_module, 'grab_region', lambda rect: image(200, 400))
+    outputs = []
+    monkeypatch.setattr(controller, 'edit_image', lambda img: outputs.append('edit'))
+    monkeypatch.setattr(controller, 'save_as', lambda img: outputs.append('save'))
+    monkeypatch.setattr(app_module, 'write_image', lambda img: outputs.append('copy'))
+    controller._start_scroll_session(Rect(0, 0, 100, 200))
+    preview, session = controller._scroll_preview, controller._scroll_session
+    getattr(preview, action+'_btn').click()
+    session._capture_frame()
+    assert outputs == ([expected] if expected else [])
+    assert not session.is_running
+    assert not preview.toolbar.isVisible()
+    assert all(not shade.isVisible() for shade in preview.selection_frame.shades)

@@ -82,7 +82,7 @@ def test_reverse_or_too_far_scroll_can_recover(manual_session, monkeypatch):
     assert hints[-1] == '稍往回滚'
     position[0] = 400
     session._capture_frame()
-    assert session._frames == 3 and hints[-1] == '向下滚动'
+    assert session._frames == 3 and hints[-1] == '手动滚动'
     session.abort()
     np.testing.assert_array_equal(scroller.qimage_to_array(results[0]), page[:2000])
 
@@ -139,3 +139,15 @@ def test_fullscreen_border_is_ignored_when_idle_and_removed_from_output(manual_s
     session.abort()
     assert not errors
     np.testing.assert_array_equal(scroller.qimage_to_array(results[0]), page[:1840])
+
+
+def test_cancel_does_not_deliver_partial_image(manual_session):
+    session, _, _, results, _, _, _ = manual_session
+    cancelled = []
+    session.aborted.connect(lambda: cancelled.append(True))
+    session.start()
+    session.complete()
+    session.cancel()
+    session._capture_frame()
+    assert cancelled == [True] and not results
+    assert not session.is_running and session._acc is None

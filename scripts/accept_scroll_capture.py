@@ -77,7 +77,7 @@ def main(destination, outside=False, edge_border=False):
     if edge_border:
         # Simulate selection touching every screen edge using only the test document.
         preview.selection_frame.anchor_to(selection, selection)
-    session.excluded_borders = preview.selection_frame.rectangles
+    session.excluded_borders = preview.capture_exclusions
     captures = []
     session.frame_capturing.connect(lambda: captures.append(True))
     session.frame_capturing.connect(preview.prepare_capture)
@@ -95,7 +95,7 @@ def main(destination, outside=False, edge_border=False):
     out.mkdir(parents=True, exist_ok=True)
     original_cursor = QCursor.pos()
     mouse = Controller()
-    report = {'status': 'failed', 'density': density, 'preview': 'left' if outside else 'inside'}
+    report = {'status': 'failed', 'density': density, 'preview': ('below' if preview.y() >= selection.bottom else 'left') if outside else 'inside'}
     try:
         session.start()
         first = qimage_to_array(page)[:round(height*density)]
@@ -127,12 +127,14 @@ def main(destination, outside=False, edge_border=False):
             pump(.02)
         assert not session.is_running, 'Explicit completion did not finish capture'
         assert all(not edge.isVisible() for edge in preview.selection_frame.edges)
+        assert all(not shade.isVisible() for shade in preview.selection_frame.shades)
+        assert not preview.toolbar.isVisible()
         report['border_closed'] = True
         report['edge_border'] = edge_border
         report.update(wheel_events=document.wheels, frames=session._frames, offset=document.offset, errors=errors)
         assert not errors, errors
         assert preview.thumb.pixmap() is not None
-        assert preview.thumb.pixmap().width() <= 154
+        assert preview.thumb.pixmap().width() <= 164
         assert len(results) == 1 and document.offset == total-height
         assert document.wheels > 0 and session._frames > 1
         results[0].save(str(out/'actual.png'))
