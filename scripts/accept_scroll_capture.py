@@ -22,7 +22,7 @@ from shiguang_capture.geometry import Rect
 from shiguang_capture.ui.scroll_preview import ScrollPreviewWindow
 
 
-def main(destination, outside=False):
+def main(destination, outside=False, edge_border=False):
     app = QApplication([])
     area = app.primaryScreen().availableGeometry()
     density = app.primaryScreen().devicePixelRatio()
@@ -74,6 +74,12 @@ def main(destination, outside=False):
     if not outside:
         # Force the thumbnail inside the selection to verify clean exclusion.
         preview.move(origin.x()+width//2-preview.width()//2, origin.y()+height//2-preview.height()//2)
+    if edge_border:
+        # Simulate selection touching every screen edge using only the test document.
+        preview.selection_frame.anchor_to(selection, selection)
+    session.excluded_borders = preview.selection_frame.rectangles
+    captures = []
+    session.frame_capturing.connect(lambda: captures.append(True))
     session.frame_capturing.connect(preview.prepare_capture)
     session.frame_captured.connect(preview.restore_after_capture)
     session.preview_ready.connect(preview.update_image)
@@ -83,6 +89,7 @@ def main(destination, outside=False):
     preview.save_requested.connect(session.complete)
     results, errors = [], []
     session.finished.connect(results.append)
+    session.finished.connect(lambda image: preview.close())
     session.failed.connect(errors.append)
     out = Path(destination)
     out.mkdir(parents=True, exist_ok=True)
@@ -97,8 +104,11 @@ def main(destination, outside=False):
         assert document.wheels == 0 and document.offset == 0
         assert session.is_running and not results
         assert QCursor.pos() == original_cursor, 'Application moved the pointer'
+        assert not captures, 'Visible border or preview triggered an idle capture'
+        assert all(edge.isVisible() for edge in preview.selection_frame.edges)
+        report['border_visible'] = True
         report['idle_wait_respected'] = True
-        target = QPoint(origin.x()+20, origin.y()+height//2)
+        target = QPoint(origin.x()+(1 if edge_border else 20), origin.y()+height//2)
         QCursor.setPos(target)
         while document.offset < total-height:
             frames = session._frames
@@ -116,6 +126,9 @@ def main(destination, outside=False):
         while session.is_running and time.monotonic() < deadline:
             pump(.02)
         assert not session.is_running, 'Explicit completion did not finish capture'
+        assert all(not edge.isVisible() for edge in preview.selection_frame.edges)
+        report['border_closed'] = True
+        report['edge_border'] = edge_border
         report.update(wheel_events=document.wheels, frames=session._frames, offset=document.offset, errors=errors)
         assert not errors, errors
         assert preview.thumb.pixmap() is not None
@@ -137,4 +150,4 @@ def main(destination, outside=False):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], '--outside' in sys.argv)
+    main(sys.argv[1], '--outside' in sys.argv, '--edge-border' in sys.argv)

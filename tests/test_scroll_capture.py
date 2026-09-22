@@ -114,3 +114,28 @@ def test_abort_cancels_pending_capture_and_delivers_once(manual_session):
     session.abort()
     assert len(results) == 1
     assert not session._timer.isActive() and not session._frame_timer.isActive()
+
+
+def test_fullscreen_border_is_ignored_when_idle_and_removed_from_output(manual_session, monkeypatch):
+    from shiguang_capture.ui.scroll_frame import border_rectangles
+    session, page, position, results, errors, _, _ = manual_session
+    session.start()
+    session.excluded_borders = border_rectangles(session._rect, session._rect)
+    probe = page[:1600].copy()
+    probe[:4] = probe[-4:] = (55, 139, 250)
+    probe[:, :4] = probe[:, -4:] = (55, 139, 250)
+    hidden = []
+    session.frame_capturing.connect(lambda: hidden.append(True))
+    with monkeypatch.context() as patch:
+        patch.setattr(scroller, 'grab_region', lambda rect: scroller.array_to_qimage(probe))
+        for _ in range(10):
+            session._capture_step()
+        assert not hidden and session._frames == 1
+        probe[500:800] = 0
+        session._capture_step()
+        assert hidden == [True]
+    position[0] = 240
+    session._capture_frame()
+    session.abort()
+    assert not errors
+    np.testing.assert_array_equal(scroller.qimage_to_array(results[0]), page[:1840])

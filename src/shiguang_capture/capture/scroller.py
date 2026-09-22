@@ -42,6 +42,7 @@ class ScrollCaptureSession(QObject):
         self._max_frames = max_frames
         self._settle_ms = settle_ms
         self.excluded_rect: Rect | None = None
+        self.excluded_borders: list[Rect] = []
         self._acc = self._prev_frame = None
         self._frames = 0
         self._running = False
@@ -91,7 +92,7 @@ class ScrollCaptureSession(QObject):
         self._frame_timer.start(250)
 
     def _same_content(self, frame):
-        """Ignore only the preview footprint when detecting user movement.
+        """Ignore the preview and border footprints when detecting user movement.
 
         Idle polling leaves the preview visible. A changed page triggers a clean
         capture with the overlapping preview hidden; thumbnails never enter the
@@ -100,19 +101,34 @@ class ScrollCaptureSession(QObject):
         previous = self._prev_frame
         if frame.shape != previous.shape:
             return False
-        rect = self.excluded_rect
-        if rect is None or not rect.intersects(self._rect):
+        excluded = [rect for rect in [self.excluded_rect, *self.excluded_borders]
+                    if rect is not None and rect.intersects(self._rect)]
+        if not excluded:
             return frames_identical(frame, previous, tol=.1)
         height, width = frame.shape[:2]
         sx, sy = width/self._rect.width, height/self._rect.height
-        left = max(0, min(width, int((rect.x-self._rect.x)*sx)-4))
-        top = max(0, min(height, int((rect.y-self._rect.y)*sy)-4))
-        right = max(0, min(width, int((rect.right-self._rect.x)*sx)+4))
-        bottom = max(0, min(height, int((rect.bottom-self._rect.y)*sy)+4))
-        slices = [(slice(0, top), slice(None)), (slice(bottom, height), slice(None)),
-                  (slice(top, bottom), slice(0, left)), (slice(top, bottom), slice(right, width))]
-        parts = [(frame[y, x], previous[y, x]) for y, x in slices if frame[y, x].size]
-        return bool(parts) and all(frames_identical(a, b, tol=.1) for a, b in parts)
+        # Split the comparison into uncovered areas, retaining the original
+        # pixels for stitching. This also handles clipped/fullscreen borders.
+        regions = [(0, 0, width, height)]
+        for rect in excluded:
+            # Some desktop compositors add a shadow outside the preview window.
+            pad_x, pad_y = (int(12*sx)+4, int(12*sy)+4) if rect == self.excluded_rect else (4, 4)
+            left = max(0, min(width, int((rect.x-self._rect.x)*sx)-pad_x))
+            top = max(0, min(height, int((rect.y-self._rect.y)*sy)-pad_y))
+            right = max(0, min(width, int((rect.right-self._rect.x)*sx)+pad_x))
+            bottom = max(0, min(height, int((rect.bottom-self._rect.y)*sy)+pad_y))
+            uncovered = []
+            for x1, y1, x2, y2 in regions:
+                l, t, r, b = max(x1, left), max(y1, top), min(x2, right), min(y2, bottom)
+                if l >= r or t >= b:
+                    uncovered.append((x1, y1, x2, y2))
+                else:
+                    uncovered.extend((a, c, d, e) for a, c, d, e in
+                                     [(x1, y1, x2, t), (x1, b, x2, y2),
+                                      (x1, t, l, b), (r, t, x2, b)] if a < d and c < e)
+            regions = uncovered
+        return bool(regions) and all(frames_identical(frame[y1:y2, x1:x2], previous[y1:y2, x1:x2], tol=.1)
+                                     for x1, y1, x2, y2 in regions)
 
     def _capture_step(self):
         if not self._running:

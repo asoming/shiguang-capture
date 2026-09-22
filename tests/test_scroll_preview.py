@@ -48,3 +48,33 @@ def test_long_wide_thumbnail_never_enlarges_window(qt_session):
     assert preview.thumb.pixmap().height() <= 184
     assert preview.dimensions.text() == '800 px'
     preview.close()
+
+
+@pytest.mark.parametrize('selection,screen,inside', [
+    (Rect(200, 100, 500, 400), Rect(0, 0, 1920, 1080), False),
+    (Rect(0, 0, 1920, 1080), Rect(0, 0, 1920, 1080), True),
+    (Rect(-1920, 0, 1920, 1080), Rect(-1920, 0, 1920, 1080), True),
+])
+def test_capture_border_geometry_and_lifecycle(qt_session, selection, screen, inside):
+    from PySide6.QtCore import Qt
+    preview = ScrollPreviewWindow()
+    try:
+        preview.anchor_to(selection, screen)
+        frame = preview.selection_frame
+        assert all(rect.intersects(selection) == inside for rect in frame.rectangles)
+        for rect in frame.rectangles:
+            assert screen.x <= rect.x < rect.right <= screen.right
+            assert screen.y <= rect.y < rect.bottom <= screen.bottom
+        preview.restore_after_capture()
+        assert all(edge.isVisible() for edge in frame.edges)
+        assert all(edge.windowFlags() & Qt.WindowType.WindowTransparentForInput for edge in frame.edges)
+        assert all(edge.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus for edge in frame.edges)
+        preview.prepare_capture()
+        assert all(edge.isVisible() != inside for edge in frame.edges)
+        preview.restore_after_capture()
+        assert all(edge.isVisible() for edge in frame.edges)
+        preview.close()
+        preview.restore_after_capture()
+        assert all(not edge.isVisible() for edge in frame.edges)
+    finally:
+        preview.close()

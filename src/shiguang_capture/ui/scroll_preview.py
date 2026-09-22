@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWi
 
 from ..geometry import Rect
 from .icon import make_icon
+from .scroll_frame import ScrollCaptureFrame
 from .tool_icons import tool_icon
 
 
@@ -35,6 +36,7 @@ class ScrollPreviewWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.setObjectName('scrollPreview')
         self.setFixedSize(176, 270)
+        self.selection_frame = ScrollCaptureFrame(self)
         self._selection = None
         self._closed = False
         self.setStyleSheet('''
@@ -85,9 +87,11 @@ class ScrollPreviewWindow(QWidget):
 
     def anchor_to(self, selection: Rect, screen: Rect):
         self._selection = selection
+        self.selection_frame.anchor_to(selection, screen)
         self.move(preview_position(selection, screen, self.width(), self.height()))
 
     def prepare_capture(self):
+        self.selection_frame.prepare_capture()
         bounds = Rect(self.x(), self.y(), self.width(), self.height())
         if self._selection is None or bounds.intersects(self._selection):
             self.hide()
@@ -95,9 +99,11 @@ class ScrollPreviewWindow(QWidget):
     def restore_after_capture(self):
         if not self._closed:
             self.show()
+            self.selection_frame.show()
 
     def closeEvent(self, event) -> None:
         self._closed = True
+        self.selection_frame.close()
         self.abort_requested.emit()
         super().closeEvent(event)
 

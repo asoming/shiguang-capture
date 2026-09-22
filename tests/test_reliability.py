@@ -303,6 +303,8 @@ def test_manual_scroll_preview_visible_while_waiting_for_user(controller, monkey
     assert session.is_running
     assert preview.isVisible()
     assert session.excluded_rect is not None
+    assert session.excluded_borders == preview.selection_frame.rectangles
+    assert all(edge.isVisible() for edge in preview.selection_frame.edges)
     session.frame_capturing.emit()
     assert not preview.isVisible()
     session.abort()

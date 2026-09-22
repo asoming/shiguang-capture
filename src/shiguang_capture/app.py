@@ -432,6 +432,7 @@ class AppController:
         if screen:
             area = screen.availableGeometry()
             preview.anchor_to(rect, Rect(area.x(), area.y(), area.width(), area.height()))
+        session.excluded_borders = preview.selection_frame.rectangles
         session.excluded_rect = Rect(preview.x(), preview.y(), preview.width(), preview.height())
         # First capture is clean; subsequent polling never controls user input.
         session.start()
