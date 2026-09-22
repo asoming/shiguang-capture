@@ -1,8 +1,8 @@
 """Native scroll capture acceptance against an opaque synthetic document.
 
 Run on a desktop: PYTHONPATH=src python scripts/accept_scroll_capture.py OUTPUT
-Only the test document is captured. A preview deliberately covers its wheel
-location, exercising both DPI conversion and hiding the preview before input.
+Only the test document is captured. Test-only input simulates a person scrolling;
+the application must stay idle until that input and wait for explicit completion.
 """
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ import time
 
 import numpy as np
 from PySide6.QtCore import QPoint, QRect, Qt
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QCursor, QFont, QPainter
+from pynput.mouse import Controller
 from PySide6.QtWidgets import QApplication, QWidget
 
 from shiguang_capture.capture.scroller import ScrollCaptureSession, array_to_qimage, qimage_to_array
@@ -66,31 +67,55 @@ def main(destination, outside=False):
     document.activateWindow()
     pump(.6)
     origin = document.mapToGlobal(QPoint(0, 0))
-    session = ScrollCaptureSession(Rect(origin.x(), origin.y(), width, height), scroll_clicks=2, settle_ms=160)
+    session = ScrollCaptureSession(Rect(origin.x(), origin.y(), width, height), settle_ms=160)
     preview = ScrollPreviewWindow()
     selection = Rect(origin.x(), origin.y(), width, height)
     preview.anchor_to(selection, Rect(area.x(), area.y(), area.width(), area.height()))
     if not outside:
-        # Force the thumbnail over the wheel target to verify safe exclusion.
+        # Force the thumbnail inside the selection to verify clean exclusion.
         preview.move(origin.x()+width//2-preview.width()//2, origin.y()+height//2-preview.height()//2)
     session.frame_capturing.connect(preview.prepare_capture)
     session.frame_captured.connect(preview.restore_after_capture)
     session.preview_ready.connect(preview.update_image)
     session.progressed.connect(preview.update_progress)
+    session.excluded_rect = Rect(preview.x(), preview.y(), preview.width(), preview.height())
+    session.hint_changed.connect(preview.status.setText)
+    preview.save_requested.connect(session.complete)
     results, errors = [], []
     session.finished.connect(results.append)
     session.failed.connect(errors.append)
     out = Path(destination)
     out.mkdir(parents=True, exist_ok=True)
+    original_cursor = QCursor.pos()
+    mouse = Controller()
     report = {'status': 'failed', 'density': density, 'preview': 'left' if outside else 'inside'}
     try:
         session.start()
         first = qimage_to_array(page)[:round(height*density)]
         assert np.array_equal(session._acc, first), 'Test document is obstructed before capture'
-        deadline = time.monotonic()+35
+        pump(1)
+        assert document.wheels == 0 and document.offset == 0
+        assert session.is_running and not results
+        assert QCursor.pos() == original_cursor, 'Application moved the pointer'
+        report['idle_wait_respected'] = True
+        target = QPoint(origin.x()+20, origin.y()+height//2)
+        QCursor.setPos(target)
+        while document.offset < total-height:
+            frames = session._frames
+            mouse.scroll(0, -2)  # Test-only simulation of the user's wheel.
+            deadline = time.monotonic()+3
+            while session._frames == frames and time.monotonic() < deadline:
+                pump(.02)
+            assert session._frames > frames, 'Manual wheel did not update the long image'
+            assert QCursor.pos() == target, 'Application moved the pointer after capture'
+        pump(1)
+        assert session.is_running and not results, 'Capture ended without the user finishing'
+        report['bottom_wait_respected'] = True
+        preview.save_btn.click()
+        deadline = time.monotonic()+3
         while session.is_running and time.monotonic() < deadline:
             pump(.02)
-        assert not session.is_running, 'Capture did not stop at the document end'
+        assert not session.is_running, 'Explicit completion did not finish capture'
         report.update(wheel_events=document.wheels, frames=session._frames, offset=document.offset, errors=errors)
         assert not errors, errors
         assert preview.thumb.pixmap() is not None
@@ -106,6 +131,7 @@ def main(destination, outside=False):
         preview.hide()
         preview.close()
         document.close()
+        QCursor.setPos(original_cursor)
         (out/'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps(report))
 

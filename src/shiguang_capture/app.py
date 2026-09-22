@@ -421,20 +421,20 @@ class AppController:
         session.frame_captured.connect(preview.restore_after_capture)
         session.progressed.connect(preview.update_progress)
         session.preview_ready.connect(preview.update_image)
+        session.hint_changed.connect(preview.status.setText)
         session.finished.connect(lambda image: self._on_scroll_finished(image, preview))
         session.failed.connect(lambda msg: self._on_scroll_failed(msg, preview))
         preview.abort_requested.connect(session.abort)
-        preview.save_requested.connect(session.abort)
+        preview.save_requested.connect(session.complete)
         self._scroll_session, self._scroll_preview = session, preview
         # Anchor to the screen containing the selection, including negative origins.
         screen = QGuiApplication.screenAt(QPoint(rect.x+rect.width//2, rect.y+rect.height//2)) or QGuiApplication.primaryScreen()
         if screen:
             area = screen.availableGeometry()
             preview.anchor_to(rect, Rect(area.x(), area.y(), area.width(), area.height()))
-        # Capture the first frame before displaying the preview.
+        session.excluded_rect = Rect(preview.x(), preview.y(), preview.width(), preview.height())
+        # First capture is clean; subsequent polling never controls user input.
         session.start()
-        # frame_captured shows it after wheel delivery. Showing it here would
-        # cover the pending first wheel target before the scroll timer fires.
 
     def _on_scroll_finished(self, image, preview):
         preview.close()

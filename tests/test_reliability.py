@@ -295,15 +295,14 @@ def test_ten_pins_restore_visible_and_exit_passthrough(controller, app):
     assert not controller._pins
 
 
-def test_scroll_preview_stays_hidden_until_first_wheel(controller, monkeypatch):
+def test_manual_scroll_preview_visible_while_waiting_for_user(controller, monkeypatch):
     import shiguang_capture.capture.scroller as scroll_module
     monkeypatch.setattr(scroll_module, 'grab_region', lambda rect: image(200, 400))
     controller._start_scroll_session(Rect(0, 0, 100, 200))
     session, preview = controller._scroll_session, controller._scroll_preview
     assert session.is_running
-    assert not preview.isVisible()
-    session.frame_captured.emit()
     assert preview.isVisible()
+    assert session.excluded_rect is not None
     session.frame_capturing.emit()
     assert not preview.isVisible()
     session.abort()

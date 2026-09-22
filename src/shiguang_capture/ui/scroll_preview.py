@@ -109,7 +109,7 @@ class ScrollPreviewWindow(QWidget):
                                               Qt.TransformationMode.SmoothTransformation))
 
     def update_progress(self, height: int, frames: int, image: QImage | None = None) -> None:
-        self.status.setText(f'{frames} 帧')
+        self.status.setText('向下滚动')
         self.dimensions.setText(f'{height:,} px')
         if image is not None:
             self.update_image(image)
