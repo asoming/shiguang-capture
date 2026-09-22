@@ -21,7 +21,7 @@ from shiguang_capture.geometry import Rect
 from shiguang_capture.ui.scroll_preview import ScrollPreviewWindow
 
 
-def main(destination):
+def main(destination, outside=False):
     app = QApplication([])
     area = app.primaryScreen().availableGeometry()
     density = app.primaryScreen().devicePixelRatio()
@@ -68,17 +68,21 @@ def main(destination):
     origin = document.mapToGlobal(QPoint(0, 0))
     session = ScrollCaptureSession(Rect(origin.x(), origin.y(), width, height), scroll_clicks=2, settle_ms=160)
     preview = ScrollPreviewWindow()
-    preview.resize(360, 400)
-    preview.move(origin.x()+width//2-180, origin.y()+height//2-200)
-    session.frame_capturing.connect(preview.hide)
-    session.frame_captured.connect(preview.show)
+    selection = Rect(origin.x(), origin.y(), width, height)
+    preview.anchor_to(selection, Rect(area.x(), area.y(), area.width(), area.height()))
+    if not outside:
+        # Force the thumbnail over the wheel target to verify safe exclusion.
+        preview.move(origin.x()+width//2-preview.width()//2, origin.y()+height//2-preview.height()//2)
+    session.frame_capturing.connect(preview.prepare_capture)
+    session.frame_captured.connect(preview.restore_after_capture)
+    session.preview_ready.connect(preview.update_image)
     session.progressed.connect(preview.update_progress)
     results, errors = [], []
     session.finished.connect(results.append)
     session.failed.connect(errors.append)
     out = Path(destination)
     out.mkdir(parents=True, exist_ok=True)
-    report = {'status': 'failed', 'density': density}
+    report = {'status': 'failed', 'density': density, 'preview': 'left' if outside else 'inside'}
     try:
         session.start()
         first = qimage_to_array(page)[:round(height*density)]
@@ -89,6 +93,8 @@ def main(destination):
         assert not session.is_running, 'Capture did not stop at the document end'
         report.update(wheel_events=document.wheels, frames=session._frames, offset=document.offset, errors=errors)
         assert not errors, errors
+        assert preview.thumb.pixmap() is not None
+        assert preview.thumb.pixmap().width() <= 154
         assert len(results) == 1 and document.offset == total-height
         assert document.wheels > 0 and session._frames > 1
         results[0].save(str(out/'actual.png'))
@@ -105,4 +111,4 @@ def main(destination):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1])
+    main(sys.argv[1], '--outside' in sys.argv)

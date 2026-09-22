@@ -15,6 +15,7 @@ class Mark:
     text: str = ''
     color: str = '#DA704C'
     width: float = 0
+    text_size: float = 0
 
 
 class ImageCanvas(QWidget):
@@ -26,6 +27,7 @@ class ImageCanvas(QWidget):
         self.tool = 'view'
         self.color = '#DA704C'
         self.line_width = 0
+        self.text_size = 0
         self.marks: list[Mark] = []
         self.undone: list[list[Mark]] = []
         self.history: list[list[Mark]] = []
@@ -80,23 +82,25 @@ class ImageCanvas(QWidget):
                 painter.restore()
             elif mark.tool == 'rect':
                 painter.drawRect(box)
+            elif mark.tool == 'ellipse':
+                painter.drawEllipse(box)
             elif mark.tool == 'pen':
                 painter.drawPolyline(QPolygonF(mark.points))
             elif mark.tool == 'arrow':
                 painter.drawLine(a, b)
                 angle = math.atan2(b.y()-a.y(), b.x()-a.x())
-                size = width*5
+                size = (mark.width or width)*5
                 for offset in (-0.5, 0.5):
                     painter.drawLine(b, QPointF(b.x()-size*math.cos(angle+offset), b.y()-size*math.sin(angle+offset)))
             elif mark.tool == 'text':
                 font = QFont('Noto Sans CJK SC')
-                font.setPixelSize(max(18, round(width*7)))
+                font.setPixelSize(round(mark.text_size) if mark.text_size else max(18, round(width*7)))
                 painter.setFont(font)
                 painter.drawText(a, mark.text)
 
     def text_bounds(self, mark):
         font = QFont('Noto Sans CJK SC')
-        font.setPixelSize(max(18, round(max(2, self.image.width()/450)*7)))
+        font.setPixelSize(round(mark.text_size) if mark.text_size else max(18, round(max(2, self.image.width()/450)*7)))
         metrics = QFontMetricsF(font)
         # Use typographic advances rather than glyph ink bounds. Missing glyphs
         # in a platform font backend can produce an invalid ink-box origin.

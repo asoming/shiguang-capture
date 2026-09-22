@@ -4,7 +4,8 @@ from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap, QPolygo
 
 
 def tool_icon(name, color='#263D4C'):
-    pixmap = QPixmap(24, 24)
+    pixmap = QPixmap(48, 48)
+    pixmap.setDevicePixelRatio(2)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -19,6 +20,15 @@ def tool_icon(name, color='#263D4C'):
         painter.fillRect(QRectF(5, 5, 14, 14), QColor(color))
     elif name == 'rect':
         painter.drawRect(QRectF(4, 5, 16, 14))
+    elif name == 'ellipse':
+        painter.drawEllipse(QRectF(4, 4, 16, 16))
+    elif name == 'translate':
+        painter.drawRect(QRectF(2, 9, 11, 12))
+        painter.drawRect(QRectF(11, 2, 11, 12))
+        font = QFont('Noto Sans CJK SC', 7)
+        painter.setFont(font)
+        painter.drawText(QRectF(2, 8, 11, 13), Qt.AlignmentFlag.AlignCenter, '文')
+        painter.drawText(QRectF(11, 1, 11, 13), Qt.AlignmentFlag.AlignCenter, 'A')
     elif name == 'arrow':
         painter.drawLine(4, 20, 19, 5)
         painter.drawLine(11, 5, 19, 5)
@@ -59,6 +69,6 @@ def tool_icon(name, color='#263D4C'):
         labels = {'view':'↔', 'text':'T', 'undo':'↶', 'redo':'↷', 'ocr':'OCR', 'code':'</>', 'scroll':'↕'}
         font = QFont('DejaVu Sans', 9 if name in {'ocr', 'code'} else 17)
         painter.setFont(font)
-        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, labels.get(name, name[:1]))
+        painter.drawText(QRectF(0, 0, 24, 24), Qt.AlignmentFlag.AlignCenter, labels.get(name, name[:1]))
     painter.end()
     return QIcon(pixmap)

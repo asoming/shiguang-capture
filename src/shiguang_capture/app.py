@@ -8,13 +8,14 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer, Signal, Slot, Qt, QBuffer, QIODevice
+from PySide6.QtCore import QPoint, QObject, QTimer, Signal, Slot, Qt, QBuffer, QIODevice
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from . import __version__, autostart
 from .capture.grabber import grab_fullscreen, grab_region
 from .capture.scroller import ScrollCaptureSession
+from .geometry import Rect
 from .capture.selector import RegionSelector
 from .config import AppConfig
 from .clipboard import write_text, write_image
@@ -416,19 +417,20 @@ class AppController:
     def _start_scroll_session(self, rect):
         session = ScrollCaptureSession(rect)
         preview = ScrollPreviewWindow()
-        session.frame_capturing.connect(preview.hide)
-        session.frame_captured.connect(preview.show)
+        session.frame_capturing.connect(preview.prepare_capture)
+        session.frame_captured.connect(preview.restore_after_capture)
         session.progressed.connect(preview.update_progress)
-        session.preview_ready.connect(lambda image: preview.update_progress(image.height(), session._frames, image))
+        session.preview_ready.connect(preview.update_image)
         session.finished.connect(lambda image: self._on_scroll_finished(image, preview))
         session.failed.connect(lambda msg: self._on_scroll_failed(msg, preview))
         preview.abort_requested.connect(session.abort)
         preview.save_requested.connect(session.abort)
         self._scroll_session, self._scroll_preview = session, preview
-        # Keep the preview away from the capture when possible.
-        screen = QGuiApplication.primaryScreen()
+        # Anchor to the screen containing the selection, including negative origins.
+        screen = QGuiApplication.screenAt(QPoint(rect.x+rect.width//2, rect.y+rect.height//2)) or QGuiApplication.primaryScreen()
         if screen:
-            preview.move(screen.availableGeometry().right() - preview.sizeHint().width(), 30)
+            area = screen.availableGeometry()
+            preview.anchor_to(rect, Rect(area.x(), area.y(), area.width(), area.height()))
         # Capture the first frame before displaying the preview.
         session.start()
         # frame_captured shows it after wheel delivery. Showing it here would

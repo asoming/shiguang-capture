@@ -43,7 +43,7 @@ class ScrollCaptureSession(QObject):
     frame_capturing = Signal()
     frame_captured = Signal()
     progressed = Signal(int, int)     # 已拼接总高度, 帧数
-    preview_ready = Signal(object)    # 阶段性拼接图（QImage，每 3 帧一次）
+    preview_ready = Signal(object)    # Bounded thumbnail after every appended frame
     finished = Signal(object)         # QImage 长图
     aborted = Signal()
     failed = Signal(str)
@@ -85,6 +85,7 @@ class ScrollCaptureSession(QObject):
         self._frames = 1
         self._running = True
         self.progressed.emit(first.shape[0], 1)
+        self._emit_preview()
         self._scroll_once()
 
     def abort(self) -> None:
@@ -193,14 +194,18 @@ class ScrollCaptureSession(QObject):
         self._prev_frame = frame
         self._frames += 1
         self.progressed.emit(self._acc.shape[0], self._frames)
-        if self._frames % 3 == 0:
-            self.preview_ready.emit(array_to_qimage(self._acc))
+        self._emit_preview()
 
         if self._frames >= self._max_frames:
             log.info("达到帧数上限 %d，收尾", self._max_frames)
             self._finish()
             return
         self._scroll_once()
+
+    def _emit_preview(self):
+        height, width = self._acc.shape[:2]
+        step = max(1, (height+419)//420, (width+179)//180)
+        self.preview_ready.emit(array_to_qimage(self._acc[::step, ::step]))
 
     def _finish(self) -> None:
         self._running = False
