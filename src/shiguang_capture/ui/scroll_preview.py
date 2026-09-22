@@ -22,6 +22,7 @@ class ScrollPreviewWindow(QWidget):
         self.setWindowTitle("拾光 Capture · 滚动长截图")
         self.setWindowIcon(make_icon())
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setMinimumWidth(300)
 
         lay = QVBoxLayout(self)

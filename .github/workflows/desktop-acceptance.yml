@@ -47,6 +47,11 @@ jobs:
         env:
           XDG_SESSION_TYPE: x11
         run: xvfb-run -a -s '-screen 0 1280x800x24' python scripts/accept_desktop_recording.py artifacts/native-recording
+      - name: Native Linux scroll capture at 1x and 2x DPI
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && runner.os == 'Linux' }}
+        run: |
+          QT_SCALE_FACTOR=1 xvfb-run -a -s '-screen 0 1920x1200x24' python scripts/accept_scroll_capture.py artifacts/scroll-1x
+          QT_SCALE_FACTOR=2 xvfb-run -a -s '-screen 0 1920x1200x24' python scripts/accept_scroll_capture.py artifacts/scroll-2x
       - name: Record native Windows desktop
         if: runner.os == 'Windows'
         run: python scripts/accept_desktop_recording.py artifacts/native-recording

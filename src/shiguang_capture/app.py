@@ -431,8 +431,8 @@ class AppController:
             preview.move(screen.availableGeometry().right() - preview.sizeHint().width(), 30)
         # Capture the first frame before displaying the preview.
         session.start()
-        if session.is_running:
-            preview.show()
+        # frame_captured shows it after wheel delivery. Showing it here would
+        # cover the pending first wheel target before the scroll timer fires.
 
     def _on_scroll_finished(self, image, preview):
         preview.close()

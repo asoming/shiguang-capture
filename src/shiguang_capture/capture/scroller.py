@@ -13,7 +13,7 @@ import logging
 
 import numpy as np
 from PySide6.QtCore import QObject, QTimer, Signal
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QCursor, QGuiApplication, QImage
 
 from ..geometry import Rect
 from .grabber import grab_region
@@ -53,7 +53,8 @@ class ScrollCaptureSession(QObject):
         super().__init__()
         self._rect = rect
         self._max_frames = max_frames
-        self._scroll_clicks = scroll_clicks
+        # A fixed five-notch step can skip a small selection entirely.
+        self._scroll_clicks = min(scroll_clicks, max(1, rect.height // 160))
         self._settle_ms = settle_ms
         self._acc: np.ndarray | None = None
         self._prev_frame: np.ndarray | None = None
@@ -68,6 +69,9 @@ class ScrollCaptureSession(QObject):
         self._frame_timer = QTimer(self)
         self._frame_timer.setSingleShot(True)
         self._frame_timer.timeout.connect(self._capture_frame)
+        self._scroll_timer = QTimer(self)
+        self._scroll_timer.setSingleShot(True)
+        self._scroll_timer.timeout.connect(self._send_scroll)
 
     # ---------- 生命周期 ----------
     def start(self) -> None:
@@ -90,6 +94,7 @@ class ScrollCaptureSession(QObject):
         self._running = False
         self._timer.stop()
         self._frame_timer.stop()
+        self._scroll_timer.stop()
         self._restore_mouse()
         if self._acc is not None and self._frames > 0:
             self.finished.emit(array_to_qimage(self._acc))
@@ -104,27 +109,42 @@ class ScrollCaptureSession(QObject):
     def _scroll_once(self) -> None:
         if not self._running:
             return
+        # The preview may cover the wheel target. Let the compositor hide it
+        # before sending input, just as we do before taking a screenshot.
+        self.frame_capturing.emit()
+        self._scroll_timer.start(80)
+
+    def _send_scroll(self) -> None:
+        if not self._running:
+            return
         try:
             from pynput.mouse import Controller
 
             if self._mouse is None:
                 self._mouse = Controller()
-                self._original_mouse = self._mouse.position
-            mouse = self._mouse
-            mouse.position = (self._rect.x + self._rect.width // 2,
-                              self._rect.y + self._rect.height // 2)
-            mouse.scroll(0, -self._scroll_clicks)
-        except Exception as exc:
+                self._original_mouse = QCursor.pos()
+            # Rect uses Qt logical coordinates. pynput uses native coordinates
+            # on X11/Windows, so assigning the same numbers misses the selection
+            # on scaled displays. Let Qt perform its native-screen conversion.
+            QCursor.setPos(self._rect.x + self._rect.width // 2,
+                           self._rect.y + self._rect.height // 2)
+            QGuiApplication.sync()
+            if not self._running:
+                return
+            self._mouse.scroll(0, -self._scroll_clicks)
+        except Exception:
             self.failed.emit("无法控制滚动；已保留当前图像。请检查系统权限。")
             self.abort()
             return
+        self.frame_captured.emit()
         # 等内容滚动并稳定后再抓帧
         self._timer.start(self._settle_ms)
 
     def _capture_step(self) -> None:
         if self._running:
             self.frame_capturing.emit()
-            self._frame_timer.start(80)
+            # Allow the desktop compositor to finish hiding the preview.
+            self._frame_timer.start(250)
 
     def _capture_frame(self) -> None:
         if not self._running or self._acc is None:
@@ -144,6 +164,8 @@ class ScrollCaptureSession(QObject):
         if frames_identical(frame, self._prev_frame):
             self._still_count += 1
             if self._still_count >= 2:
+                if self._frames == 1:
+                    self.failed.emit("未检测到内容滚动，已保留首屏。请框选可滚动的正文区域，避开固定侧栏和工具栏后重试。")
                 self._finish()
                 return
             self._scroll_once()
@@ -151,7 +173,7 @@ class ScrollCaptureSession(QObject):
         else:
             self._still_count = 0
 
-        overlap, sad = find_overlap(self._acc[-min(600, self._acc.shape[0]):], frame)
+        overlap, sad = find_overlap(self._prev_frame, frame)
         if overlap == 0 or sad > 2.0:
             self.failed.emit("画面无法可靠拼接，已停止并保留此前内容。")
             self.abort()
@@ -184,6 +206,7 @@ class ScrollCaptureSession(QObject):
         self._running = False
         self._timer.stop()
         self._frame_timer.stop()
+        self._scroll_timer.stop()
         self._restore_mouse()
         assert self._acc is not None
         self.finished.emit(array_to_qimage(self._acc))
@@ -191,7 +214,7 @@ class ScrollCaptureSession(QObject):
     def _restore_mouse(self):
         if self._mouse is not None and self._original_mouse is not None:
             try:
-                self._mouse.position = self._original_mouse
+                QCursor.setPos(self._original_mouse)
             except Exception:
                 pass  # Input permission may have been revoked mid-capture.
             self._original_mouse = None
