@@ -15,7 +15,8 @@ def main():
         raise ValueError('A stable package version is required')
     output = ROOT / f'dist/ShiguangCapture-v{version}-Linux-amd64.deb'
     with tempfile.TemporaryDirectory(prefix='shiguang-deb-') as temporary:
-        stage = Path(temporary)
+        stage = Path(temporary) / 'root'
+        stage.mkdir(mode=0o755)
         app = stage / 'opt/shiguang-capture'
         shutil.copytree(bundle, app, symlinks=True)
         (app / 'ShiguangCapture').chmod(0o755)
