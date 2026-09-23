@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, Signal, Qt
 from PySide6.QtGui import QImage
 
 from ..geometry import Rect
@@ -206,8 +206,11 @@ class ScrollCaptureSession(QObject):
 
     def _emit_preview(self):
         height, width = self._acc.shape[:2]
-        step = max(1, (height+419)//420, (width+179)//180)
-        self.preview_ready.emit(array_to_qimage(self._acc[::step, ::step]))
+        # Scale directly from the contiguous accumulator without another full
+        # image copy. Smooth reduction preserves text; allow 2x-DPI previews.
+        image = QImage(self._acc.data, width, height, self._acc.strides[0], QImage.Format.Format_RGB888)
+        self.preview_ready.emit(image.scaled(360, 2160, Qt.AspectRatioMode.KeepAspectRatio,
+                                             Qt.TransformationMode.SmoothTransformation))
 
     def _finish(self):
         self._running = False

@@ -143,7 +143,7 @@ def main(destination, outside=False, edge_border=False):
         report.update(wheel_events=document.wheels, frames=session._frames, offset=document.offset, errors=errors)
         assert not errors, errors
         assert preview.thumb.pixmap() is not None
-        assert preview.thumb.pixmap().width() <= 164
+        assert preview.thumb.pixmap().width() <= round(164*density)
         assert len(results) == 1 and document.offset == total-height
         assert document.wheels > 0 and session._frames > 1
         results[0].save(str(out/'actual.png'))

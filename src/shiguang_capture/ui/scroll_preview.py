@@ -183,8 +183,12 @@ class ScrollPreviewWindow(_SurfaceWindow):
             if not self._capture_width:
                 self._resize_thumbnail(image.width(), image.height())
             pixmap = QPixmap.fromImage(image)
-            self.thumb.setPixmap(pixmap.scaled(self.thumb.size(), Qt.AspectRatioMode.KeepAspectRatio,
-                                              Qt.TransformationMode.SmoothTransformation))
+            density = self.devicePixelRatioF()
+            size = QSize(round(self.thumb.width()*density), round(self.thumb.height()*density))
+            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio,
+                                   Qt.TransformationMode.SmoothTransformation)
+            pixmap.setDevicePixelRatio(density)
+            self.thumb.setPixmap(pixmap)
 
     def update_progress(self, height: int, frames: int, image: QImage | None = None) -> None:
         self.status.setText('手动滚动')

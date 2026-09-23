@@ -44,7 +44,7 @@ def test_wide_first_frame_has_no_empty_tall_panel(qt_session):
         image.fill(QColor('white'))
         preview.update_progress(800, 1, image)
         assert preview.height() == round(164*800/4000)+34
-        assert preview.thumb.pixmap().width() <= 164
+        assert preview.thumb.pixmap().deviceIndependentSize().width() <= 164
         assert preview.dimensions.text() == '800 px'
     finally:
         preview.close()
