@@ -56,6 +56,9 @@ jobs:
       - name: Record native Windows desktop
         if: runner.os == 'Windows'
         run: python scripts/accept_desktop_recording.py artifacts/native-recording
+      - name: Measure macOS encoder clock scheduling
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && runner.os == 'macOS' }}
+        run: python scripts/diagnose_record_clock.py
       - name: Repeat native macOS capture three times
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && runner.os == 'macOS' }}
         run: |

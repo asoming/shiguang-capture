@@ -311,7 +311,9 @@ def record(connection, options: RecordingOptions):
                 if active_before:
                     metrics['max_tick_ms'] = max(metrics['max_tick_ms'], work_time*1000)
                 before_sleep = time.monotonic()
-                time.sleep(max(.001, 1/options.fps-work_time))
+                # An interruptible condition wait avoids Darwin nanosleep
+                # coalescing and wakes immediately when the process is closing.
+                stop_clock.wait(max(.001, 1/options.fps-work_time))
                 if active_before:
                     metrics['active_sleep_ms'] += (time.monotonic()-before_sleep)*1000
 
