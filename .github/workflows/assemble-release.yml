@@ -61,6 +61,12 @@ jobs:
           path: stage/ShiguangCapture
       - uses: actions/download-artifact@v4
         with:
+          name: ShiguangCapture-Linux-installer
+          run-id: ${{ inputs.ci_run }}
+          github-token: ${{ github.token }}
+          path: stage/linux-installer
+      - uses: actions/download-artifact@v4
+        with:
           pattern: package-candidate-*
           run-id: ${{ inputs.packages_run }}
           github-token: ${{ github.token }}
@@ -87,6 +93,10 @@ jobs:
           tar -czf release/ShiguangCapture-v${VERSION}-Linux-x86_64.tar.gz -C stage ShiguangCapture
           cp stage/packages/package-candidate-windows-2025/dist/ShiguangCapture-Windows-x86_64-preview.zip release/ShiguangCapture-v${VERSION}-Windows-x86_64.zip
           cp stage/packages/package-candidate-macos-14/dist/ShiguangCapture-macOS-arm64-preview.tar.gz release/ShiguangCapture-v${VERSION}-macOS-arm64.tar.gz
+          cp stage/linux-installer/dist/ShiguangCapture-v${VERSION}-Linux-amd64.deb release/
+          cp stage/packages/package-candidate-windows-2025/dist/ShiguangCapture-v${VERSION}-Windows-x86_64-Setup.exe release/
+          test "$(dpkg-deb -f release/ShiguangCapture-v${VERSION}-Linux-amd64.deb Version)" = "$VERSION"
+          cp -R stage/linux-installer/artifacts/installer-tests evidence/linux-installer
           cp -R stage/packages/package-candidate-windows-2025/artifacts evidence/windows-package
           cp -R stage/packages/package-candidate-macos-14/artifacts evidence/macos-package
           cp validation/PRD-ACCEPTANCE.md evidence/

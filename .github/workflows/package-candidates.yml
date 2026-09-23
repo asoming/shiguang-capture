@@ -92,6 +92,16 @@ jobs:
             if ($process.ExitCode -ne 0) { throw "Standalone test failed: $($check.Name) ($($process.ExitCode))" }
           }
           Compress-Archive -Path 'dist/ShiguangCapture' -DestinationPath 'dist/ShiguangCapture-Windows-x86_64-preview.zip'
+      - name: Build and test Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path $compiler)) { throw 'Inno Setup compiler missing from runner' }
+          $version = (Get-Content 'dist/ShiguangCapture/VERSION' -Raw).Trim()
+          & $compiler "/DAppVersion=$version" "/DBundleDir=$PWD/dist/ShiguangCapture" "/DOutputDir=$PWD/dist" scripts/windows-installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          ./scripts/test_windows_installer.ps1
       - name: Test standalone macOS application
         if: runner.os == 'macOS'
         run: |
@@ -108,6 +118,8 @@ jobs:
           path: |
             dist/ShiguangCapture-macOS-arm64-preview.tar.gz
             dist/ShiguangCapture-Windows-x86_64-preview.zip
+            dist/*-Setup.exe
+            artifacts/installer-tests/
             artifacts/package-tests/
             artifacts/package-native/
             artifacts/package-preview/
@@ -117,6 +129,7 @@ jobs:
         with:
           name: package-failure-${{ matrix.os }}
           path: |
+            artifacts/installer-tests/
             build/media-runtime/ffmpeg-8.0.1/ffbuild/config.log
             build/pyinstaller/ShiguangCapture/warn-ShiguangCapture.txt
             artifacts/package-tests/

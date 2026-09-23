@@ -442,6 +442,7 @@ class AppController:
                               [Rect(g.x(), g.y(), g.width(), g.height()) for g in desktops])
         session.excluded_borders = preview.capture_exclusions
         session.excluded_rect = Rect(preview.x(), preview.y(), preview.width(), preview.height())
+        preview.geometry_changed.connect(lambda bounds: setattr(session, 'excluded_rect', bounds))
         # First capture is clean; subsequent polling never controls user input.
         session.start()
 

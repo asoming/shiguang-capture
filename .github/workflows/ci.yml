@@ -119,6 +119,33 @@ jobs:
           dist/ShiguangCapture/ShiguangCapture --recording-self-test
           xvfb-run -a -s '-screen 0 1280x800x24' env XDG_SESSION_TYPE=x11 dist/ShiguangCapture/ShiguangCapture --recording-desktop-test artifacts/package-native
           xvfb-run -a -s '-screen 0 1280x800x24' env XDG_SESSION_TYPE=x11 dist/ShiguangCapture/ShiguangCapture --preview-desktop-test artifacts/package-preview
+      - name: Build and test Debian installer
+        run: |
+          python scripts/build_deb.py
+          mkdir -p artifacts/installer-tests
+          sudo apt-get install -y ./dist/*.deb
+          test "$(cat /opt/shiguang-capture/VERSION)" = "$(cat dist/ShiguangCapture/VERSION)"
+          test -f /usr/share/applications/shiguang-capture.desktop
+          test -f /usr/share/icons/hicolor/256x256/apps/shiguang-capture.png
+          shiguang-capture --self-test > artifacts/installer-tests/installed-ocr.log
+          shiguang-capture --translation-self-test > artifacts/installer-tests/installed-translation.log
+          shiguang-capture --recording-self-test > artifacts/installer-tests/installed-recording.log
+          mkdir -p "$HOME/.config/shiguang-capture"
+          echo preserve-user-settings > "$HOME/.config/shiguang-capture/installer-test.txt"
+          sudo apt-get install --reinstall -y ./dist/*.deb
+          sudo apt-get purge -y shiguang-capture
+          test ! -e /usr/bin/shiguang-capture
+          test ! -e /opt/shiguang-capture/ShiguangCapture
+          test ! -e /usr/share/applications/shiguang-capture.desktop
+          test "$(cat "$HOME/.config/shiguang-capture/installer-test.txt")" = preserve-user-settings
+          echo 'Install, launch, reinstall, uninstall and settings preservation passed.' > artifacts/installer-tests/result.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShiguangCapture-Linux-installer
+          path: |
+            dist/*.deb
+            artifacts/installer-tests/
+          retention-days: 14
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
