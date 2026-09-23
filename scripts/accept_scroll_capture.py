@@ -85,6 +85,7 @@ def main(destination, outside=False, edge_border=False):
     session.preview_ready.connect(preview.update_image)
     session.progressed.connect(preview.update_progress)
     session.excluded_rect = Rect(preview.x(), preview.y(), preview.width(), preview.height())
+    preview.geometry_changed.connect(lambda bounds: setattr(session, 'excluded_rect', bounds))
     session.hint_changed.connect(preview.status.setText)
     preview.save_requested.connect(session.complete)
     results, errors = [], []
@@ -101,6 +102,8 @@ def main(destination, outside=False, edge_border=False):
         first = qimage_to_array(page)[:round(height*density)]
         assert np.array_equal(session._acc, first), 'Test document is obstructed before capture'
         pump(1)
+        preview.thumb.grab().save(str(out/'preview-first.png'))
+        preview_heights = [preview.height()]
         assert document.wheels == 0 and document.offset == 0
         assert session.is_running and not results
         assert QCursor.pos() == original_cursor, 'Application moved the pointer'
@@ -116,11 +119,17 @@ def main(destination, outside=False, edge_border=False):
             deadline = time.monotonic()+3
             while session._frames == frames and time.monotonic() < deadline:
                 pump(.02)
+            preview_heights.append(preview.height())
+            assert session.excluded_rect.height == preview.height()
             assert session._frames > frames, 'Manual wheel did not update the long image'
             assert QCursor.pos() == target, 'Application moved the pointer after capture'
         pump(1)
         assert session.is_running and not results, 'Capture ended without the user finishing'
         report['bottom_wait_respected'] = True
+        report['preview_heights'] = preview_heights
+        assert preview_heights == sorted(preview_heights)
+        assert preview_heights[-1] > preview_heights[0], 'Preview did not grow'
+        preview.thumb.grab().save(str(out/'preview-last.png'))
         preview.save_btn.click()
         deadline = time.monotonic()+3
         while session.is_running and time.monotonic() < deadline:
@@ -134,7 +143,7 @@ def main(destination, outside=False, edge_border=False):
         report.update(wheel_events=document.wheels, frames=session._frames, offset=document.offset, errors=errors)
         assert not errors, errors
         assert preview.thumb.pixmap() is not None
-        assert preview.thumb.pixmap().width() <= 164
+        assert preview.thumb.pixmap().width() <= round(164*density)
         assert len(results) == 1 and document.offset == total-height
         assert document.wheels > 0 and session._frames > 1
         results[0].save(str(out/'actual.png'))

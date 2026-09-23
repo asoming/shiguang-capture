@@ -4,8 +4,8 @@
 
 本地屏幕捕获与图片校对工具。截图、导入、标注、提取文字，再由你决定复制或保存。
 
-1.4.8 提供 Linux X11 x86_64、Windows x86_64 与 macOS arm64 安装包。
-1.4.8 增加 QQ 风格手动长截图并修复 macOS 录屏定时；保留白色录制台与蓝色动态悬浮球。屏幕、区域和窗口支持连续实时预览，无需手动刷新。隐藏面板或切到文件页时释放预览资源。
+1.4.9 提供 Linux X11 x86_64、Windows x86_64 与 macOS arm64 安装包。
+1.4.9 增加 QQ 风格手动长截图并修复 macOS 录屏定时；保留白色录制台与蓝色动态悬浮球。屏幕、区域和窗口支持连续实时预览，无需手动刷新。隐藏面板或切到文件页时释放预览资源。
 
 本版重新整理截图、录屏和识别交互：截图就地标注，录屏使用三秒全屏倒计时与贴边浮球，识别窗口只保留图片、结果和翻译。中英离线模型随包提供，无需上传图片或文字。
 
@@ -13,17 +13,22 @@
 
 ## 安装已发布稳定版
 
-在 [正式发布页](https://github.com/asoming/shiguang-capture/releases/tag/v1.4.8) 下载 Linux 压缩包与 SHA256SUMS，校验并解压，在解压目录运行：
+在 [正式发布页](https://github.com/asoming/shiguang-capture/releases/tag/v1.4.9) 下载对应安装文件与 SHA256SUMS。
+
+- **Windows**：双击 `Windows-x86_64-Setup.exe`，按提示安装；自动创建开始菜单入口，可选桌面快捷方式。在系统“已安装的应用”中卸载，保留个人设置与截图录像。
+- **Debian / Ubuntu（X11）**：用系统软件安装器打开 `.deb`，或在下载目录执行下列命令。安装后从应用菜单打开“拾光 Capture”。
+- **macOS Apple Silicon**：解压 `.app` 后移入应用程序目录；当前采用临时签名，尚未公证。
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
-# 解压下载的 tar.gz，然后进入 ShiguangCapture 目录
-./install-linux.sh
+sudo apt install ./ShiguangCapture-v1.4.9-Linux-amd64.deb
+# 卸载应用，保留个人设置与截图录像
+sudo apt remove shiguang-capture
 ```
 
-桌面与应用菜单中会出现 **拾光 Capture**。也可直接运行目录内的 `ShiguangCapture`，无需 Python、联网下载模型或账号。首次运行无需联网。安装位置为 `~/.local/share/shiguang-capture/1.4.8`，启动器为 `~/.local/bin/shiguang-capture`。关闭主窗口后驻留托盘；退出请用托盘菜单。
+DEB 安装于 `/opt/shiguang-capture`，启动器为 `/usr/bin/shiguang-capture`；需要 glibc 2.35+。软件和离线模型随包提供，首次运行无需下载模型。系统依赖由安装器按需安装。关闭窗口后驻留托盘，退出请用托盘菜单。
 
-Windows：解压后运行 `ShiguangCapture.exe`，可运行 `install-windows.ps1` 创建桌面与开始菜单快捷方式。macOS：解压 `.app` 后移到应用程序目录；当前采用 ad-hoc 签名，未进行 Apple 公证。
+便携 ZIP / TAR.GZ 包继续提供：Windows 解压运行 `ShiguangCapture.exe`；Linux 解压后运行 `./install-linux.sh`，安装至 `~/.local/share/shiguang-capture/1.4.9`，提供桌面快捷方式。便携安装与 DEB 使用同一份个人配置；切换前退出旧程序。旧的用户目录启动器可能优先于系统安装，请用应用菜单中对应的入口启动。
 
 ## 功能
 

@@ -60,7 +60,7 @@ def test_manual_high_dpi_scroll_pause_and_final_visible_frame(manual_session):
     assert not session.is_running and not errors
     np.testing.assert_array_equal(scroller.qimage_to_array(results[0]), page[:2640])
     assert len(previews) == 6
-    assert all(image.width() <= 180 and image.height() <= 420 for image in previews)
+    assert all(image.width() <= 360 and image.height() <= 2160 for image in previews)
     assert not session._timer.isActive() and not session._frame_timer.isActive()
 
 

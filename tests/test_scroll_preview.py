@@ -37,17 +37,45 @@ def test_preview_outside_capture_stays_visible_but_fullscreen_hides(qt_session):
         preview.close()
 
 
-def test_long_wide_thumbnail_never_enlarges_window(qt_session):
+def test_wide_first_frame_has_no_empty_tall_panel(qt_session):
     preview = ScrollPreviewWindow()
-    image = QImage(4000, 800, QImage.Format.Format_RGB32)
-    image.fill(QColor('white'))
-    before = preview.size()
-    preview.update_progress(800, 1, image)
-    assert preview.size() == before
-    assert preview.thumb.pixmap().width() <= 164
-    assert preview.thumb.pixmap().height() <= 212
-    assert preview.dimensions.text() == '800 px'
-    preview.close()
+    try:
+        image = QImage(4000, 800, QImage.Format.Format_RGB32)
+        image.fill(QColor('white'))
+        preview.update_progress(800, 1, image)
+        assert preview.height() == round(164*800/4000)+34
+        assert preview.thumb.pixmap().deviceIndependentSize().width() <= 164
+        assert preview.dimensions.text() == '800 px'
+    finally:
+        preview.close()
+
+
+@pytest.mark.parametrize('screen,selection', [
+    (Rect(0, 0, 1920, 1080), Rect(500, 100, 600, 300)),
+    (Rect(0, 0, 1920, 1080), Rect(0, 0, 1920, 1080)),
+    (Rect(-1920, 54, 1920, 1000), Rect(-1920, 54, 1920, 1000)),
+])
+def test_thumbnail_grows_at_fixed_scale_then_stays_on_screen(qt_session, screen, selection):
+    preview = ScrollPreviewWindow()
+    bounds = []
+    preview.geometry_changed.connect(bounds.append)
+    try:
+        preview.anchor_to(selection, screen)
+        position = preview.pos()
+        heights = []
+        for frames in (1, 2, 3, 30):
+            height = selection.height*frames
+            preview.update_progress(height, frames)
+            heights.append(preview.height())
+            assert preview.pos() == position
+            assert preview.y()+preview.height() <= screen.bottom-12
+            assert bounds[-1] == Rect(preview.x(), preview.y(), 176, preview.height())
+        assert heights[0] < heights[1] < heights[2] < heights[3]
+        assert heights[0] == round(164*selection.height/selection.width)+34
+        preview.update_progress(selection.height*60, 60)
+        assert preview.height() == heights[-1]
+    finally:
+        preview.close()
 
 
 @pytest.mark.parametrize('selection,screen,inside', [

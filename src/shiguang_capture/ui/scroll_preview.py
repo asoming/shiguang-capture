@@ -45,6 +45,7 @@ class _SurfaceWindow(QWidget):
 
 
 class ScrollPreviewWindow(_SurfaceWindow):
+    geometry_changed = Signal(object)
     abort_requested = Signal()
     save_requested = Signal()
     edit_requested = Signal()
@@ -63,6 +64,7 @@ class ScrollPreviewWindow(_SurfaceWindow):
         self.setFixedSize(176, 246)
         self.selection_frame = ScrollCaptureFrame(self)
         self._selection = None
+        self._screen = None
         self._closed = False
         self._capture_width = 0
         self.finish_action = 'edit'
@@ -120,12 +122,12 @@ class ScrollPreviewWindow(_SurfaceWindow):
 
     def anchor_to(self, selection: Rect, screen: Rect, screens=None):
         self._selection = selection
-        below = screen.bottom-12-(selection.bottom+50)
-        height = min(326, below) if below >= 160 else 246
-        self.setFixedHeight(height)
-        self.thumb.setFixedHeight(height-34)
+        self._screen = screen
+        height = max(35, round(self.thumb.width()*selection.height/selection.width)+34)
+        height = min(height, max(35, screen.height-56))
+        self.move(preview_position(selection, screen, self.width(), height))
+        self._resize_thumbnail(selection.width, selection.height)
         self.selection_frame.anchor_to(selection, screen, screens)
-        self.move(preview_position(selection, screen, self.width(), self.height()))
         self.toolbar.move(toolbar_position(selection, screen, self.toolbar.width(), self.toolbar.height()))
 
     @property
@@ -156,16 +158,44 @@ class ScrollPreviewWindow(_SurfaceWindow):
         self.abort_requested.emit()
         super().closeEvent(event)
 
+    def _resize_thumbnail(self, width: int, height: int):
+        # Keep the top edge anchored and grow at a constant scale until the
+        # available screen space is filled. Do not reserve an empty tall panel.
+        limit = max(35, self._screen.bottom-self.y()-12) if self._screen else 326
+        desired = max(1, round(self.thumb.width()*height/width))
+        self.thumb.setFixedHeight(min(desired, limit-34))
+        self.setFixedHeight(self.thumb.height()+34)
+        self._emit_geometry()
+
+    def _emit_geometry(self):
+        self.geometry_changed.emit(Rect(self.x(), self.y(), self.width(), self.height()))
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._emit_geometry()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._emit_geometry()
+
     def update_image(self, image: QImage):
         if not image.isNull():
+            if not self._capture_width:
+                self._resize_thumbnail(image.width(), image.height())
             pixmap = QPixmap.fromImage(image)
-            self.thumb.setPixmap(pixmap.scaled(self.thumb.size(), Qt.AspectRatioMode.KeepAspectRatio,
-                                              Qt.TransformationMode.SmoothTransformation))
+            density = self.devicePixelRatioF()
+            size = QSize(round(self.thumb.width()*density), round(self.thumb.height()*density))
+            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio,
+                                   Qt.TransformationMode.SmoothTransformation)
+            pixmap.setDevicePixelRatio(density)
+            self.thumb.setPixmap(pixmap)
 
     def update_progress(self, height: int, frames: int, image: QImage | None = None) -> None:
         self.status.setText('手动滚动')
         if frames == 1 and self._selection:
             self._capture_width = round(self._selection.width*height/self._selection.height)
+        if self._capture_width:
+            self._resize_thumbnail(self._capture_width, height)
         self.dimensions.setText(f'{height:,} px')
         if self._capture_width:
             self.selection_frame.set_size(self._capture_width, height)
