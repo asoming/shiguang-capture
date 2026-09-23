@@ -16,18 +16,22 @@ results = {}
 
 
 def measure():
-    results['thread_qos_result'] = configure_encoder_thread()
-    with RecordingClock(threading.Event()) as clock:
-        for name, wait in [('sleep', time.sleep), ('event', threading.Event().wait), ('recording_clock', clock.wait)]:
-            delays = []
-            until = time.monotonic()+1.5
-            while time.monotonic() < until:
-                began = time.monotonic()
-                wait(1/30)
-                delays.append((time.monotonic()-began)*1000)
-            results[name] = {'samples': len(delays), 'mean_ms': statistics.mean(delays),
-                             'max_ms': max(delays), 'requested_ms': 1000/30}
-    app.quit()
+    try:
+        results['thread_qos_result'] = configure_encoder_thread()
+        with RecordingClock(threading.Event()) as clock:
+            for name, wait in [('sleep', time.sleep), ('event', threading.Event().wait), ('recording_clock', clock.wait)]:
+                delays = []
+                until = time.monotonic()+1.5
+                while time.monotonic() < until:
+                    began = time.monotonic()
+                    wait(1/30)
+                    delays.append((time.monotonic()-began)*1000)
+                results[name] = {'samples': len(delays), 'mean_ms': statistics.mean(delays),
+                                 'max_ms': max(delays), 'requested_ms': 1000/30}
+    except Exception as exc:
+        results['error'] = str(exc)
+    finally:
+        app.quit()
 
 
 worker = threading.Thread(target=measure)
@@ -39,3 +43,6 @@ output = Path('artifacts/encoder-clock.json')
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(json.dumps(results, indent=2))
 print(json.dumps(results, indent=2))
+
+if 'error' in results:
+    raise SystemExit(1)
