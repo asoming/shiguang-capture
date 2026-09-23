@@ -99,6 +99,7 @@ jobs:
           dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --self-test
           dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --recording-self-test
           dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --preview-desktop-test artifacts/package-preview
+          dist/ShiguangCapture.app/Contents/MacOS/ShiguangCapture --recording-desktop-test artifacts/package-native
           tar -czf dist/ShiguangCapture-macOS-arm64-preview.tar.gz -C dist ShiguangCapture.app
       - uses: actions/upload-artifact@v4
         if: success()
