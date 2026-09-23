@@ -64,7 +64,7 @@ class SelectionCanvas(ImageCanvas):
             super().mousePressEvent(event)
             return
         self.commit_text()
-        size = max(18, round(max(2, self.image.width()/450)*7))
+        size = self.text_size or max(18, round(max(2, self.image.width()/450)*7))
         self._open_text(self.point_on_image(event.position()) + QPointF(0, size))
 
     def _open_text(self, point, index=None):
@@ -75,7 +75,7 @@ class SelectionCanvas(ImageCanvas):
         self.text_input.setStyleSheet('QLineEdit {background:white;color:#263D4C;border:1px solid #378BFA;padding:3px;}')
         scale = self.width()/self.image.width()
         font = QFont('Noto Sans CJK SC')
-        size = max(18, round(max(2, self.image.width()/450)*7))
+        size = (self.marks[index].text_size if index is not None else self.text_size) or max(18, round(max(2, self.image.width()/450)*7))
         font.setPixelSize(max(12, round(size*scale)))
         self.text_input.setFont(font)
         x = max(0, min(round(point.x()*scale), self.width()-80))
@@ -111,7 +111,7 @@ class SelectionCanvas(ImageCanvas):
                 self.changed.emit()
         elif value:
             self.checkpoint()
-            self.marks.append(Mark('text', [self.text_point], value, self.color, self.line_width))
+            self.marks.append(Mark('text', [self.text_point], value, self.color, self.line_width, self.text_size))
             self.changed.emit()
         self.update()
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, self.tool == 'view')

@@ -9,18 +9,14 @@ from __future__ import annotations
 
 import numpy as np
 
-# 重叠搜索上限（像素）：大于典型视口一次滚动的距离
-DEFAULT_MAX_OVERLAP = 600
 # 两帧整体差异低于该均值差视为「没有滚动」（终止条件）
 IDENTICAL_TOLERANCE = 0.5
 # 单帧重叠匹配的可接受误差（超出则认为内容动态变化过大，仍取最优但降置信）
 MATCH_TOLERANCE = 2.0
 # 最优重叠的 SAD 仍高于该值 → 判定两帧无重叠（直接整帧追加）
 NO_MATCH_THRESHOLD = 8.0
-# 并列容差带：带内取最大重叠（周期/留白内容下避免错位）
-TIE_BAND = 1.0
-# 匹配阶段的列抽样步长（提速，不影响行对齐精度）
-_COL_STEP = 4
+# Bound comparison width, while keeping every row at native pixel resolution.
+_MATCH_COLUMNS = 64
 
 
 def _gray(img: np.ndarray) -> np.ndarray:
@@ -32,10 +28,10 @@ def _gray(img: np.ndarray) -> np.ndarray:
 
 
 def find_overlap(prev: np.ndarray, curr: np.ndarray,
-                 max_overlap: int = DEFAULT_MAX_OVERLAP) -> tuple[int, float]:
+                 max_overlap: int | None = None) -> tuple[int, float]:
     """计算 curr 相对 prev 的重叠像素数。
 
-    返回 (overlap, sad)：overlap∈[0, max_overlap]，sad 为该重叠下的
+    返回 (overlap, sad)：默认搜索整个视口，sad 为所选重叠下的
     平均每像素绝对差（越小越可信）。两帧宽度必须一致。
     所有候选重叠的 SAD 都高于 NO_MATCH_THRESHOLD 时返回 (0, sad)，
     表示两帧无可靠重叠（调用方应整帧追加或终止）。
@@ -43,25 +39,30 @@ def find_overlap(prev: np.ndarray, curr: np.ndarray,
     if prev.shape[1] != curr.shape[1]:
         raise ValueError("两帧宽度不一致，无法拼接")
     g_prev, g_curr = _gray(prev), _gray(curr)
-    upper = min(max_overlap, prev.shape[0], curr.shape[0])
+    upper = min(prev.shape[0], curr.shape[0])
+    if max_overlap is not None:
+        upper = min(upper, max_overlap)
     if upper <= 0:
         return 0, float("inf")
 
-    p = g_prev[:, ::_COL_STEP]
-    c = g_curr[:, ::_COL_STEP]
-    sads = np.empty(upper + 1, dtype=np.float64)
-    sads[0] = np.inf
-    for o in range(1, upper + 1):
+    step = max(1, prev.shape[1] // _MATCH_COLUMNS)
+    p = g_prev[:, ::step]
+    c = g_curr[:, ::step]
+    sads = np.full(upper + 1, np.inf, dtype=np.float64)
+    # A few matching blank pixels are not evidence of a shared document strip.
+    for o in range(min(32, upper), upper + 1):
         sads[o] = float(np.mean(np.abs(p[-o:, :] - c[:o, :])))
 
     best_o = int(np.argmin(sads[1:])) + 1
     best_sad = float(sads[best_o])
     if best_sad > NO_MATCH_THRESHOLD:
         return 0, best_sad
-    # 并列容差带内取最大重叠（周期/留白内容下避免裁掉真实新内容）
-    tied = np.where(sads[best_o:] <= best_sad + TIE_BAND)[0]
-    if tied.size:
-        best_o = best_o + int(tied[-1])
+    # Do not enlarge a match within a one-level SAD band: sparse text can differ
+    # by less than that even when shifted, silently losing real document rows.
+    # Multiple equally good alignments are ambiguous (e.g. repeated blank rows).
+    tied = np.flatnonzero(np.isclose(sads, best_sad, atol=1e-6, rtol=0))
+    if len(tied) > 1:
+        return 0, best_sad
     return best_o, best_sad
 
 

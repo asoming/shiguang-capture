@@ -197,3 +197,61 @@ def test_full_desktop_selector_uses_fullscreen_including_reserved_dock(qt_sessio
     assert output.pixelColor(output.width()//2, output.height()-2).lightness() < 180
     selector.close()
     selector.deleteLater()
+
+
+def test_palette_color_and_width_reach_exported_ellipse(selector):
+    selector._on_action('ellipse')
+    assert selector._palette.isVisible()
+    QTest.mouseClick(selector._palette.colors['#378BFA'], Qt.MouseButton.LeftButton)
+    selector._palette.size_combo.setCurrentIndex(2)
+    canvas = selector._canvas
+    QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(40, 40))
+    QTest.mouseMove(canvas, QPoint(180, 120))
+    QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(180, 120))
+    mark = canvas.marks[-1]
+    assert (mark.tool, mark.color, mark.width) == ('ellipse', '#378BFA', 10)
+    output = selector.selected_image(selector._sel)
+    assert output.pixelColor(220, 80).name() == '#378bfa'
+    assert output.pixelColor(220, 160).name() == '#ffffff'
+    canvas.undo()
+    assert selector.selected_image(selector._sel) == canvas.image
+    selector._on_action('view')
+    assert not selector._palette.isVisible()
+
+
+def test_text_size_kept_when_reediting_and_undoing(selector):
+    selector._on_action('text')
+    selector._palette.size_combo.setCurrentIndex(2)
+    canvas = selector._canvas
+    QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(20, 20))
+    canvas.text_input.setText('Large text')
+    QTest.keyClick(canvas.text_input, Qt.Key.Key_Return)
+    mark = canvas.marks[0]
+    assert mark.text_size == 60
+    point = canvas.text_bounds(mark).center() * canvas.width()/canvas.image.width()
+    assert canvas.edit_text_at(point)
+    assert canvas.text_input.font().pixelSize() == 30
+    canvas.text_input.setText('Edited')
+    canvas.commit_text()
+    assert canvas.marks[0].text == 'Edited' and canvas.marks[0].text_size == 60
+    canvas.undo()
+    assert canvas.marks[0].text == 'Large text'
+
+
+def test_toolbar_preserves_tools_and_translation_dispatch(selector):
+    assert {'rect', 'ellipse', 'arrow', 'pen', 'text', 'redact', 'undo', 'redo',
+            'pin', 'ocr', 'translate', 'code', 'table', 'scroll', 'save', 'copy', 'cancel'} <= selector._toolbar.buttons.keys()
+    chosen = []
+    selector.action_chosen.connect(lambda rect, action: chosen.append(action))
+    QTest.mouseClick(selector._toolbar.buttons['translate'], Qt.MouseButton.LeftButton)
+    assert chosen == ['translate']
+
+
+def test_palette_stays_on_screen_when_selection_touches_bottom(selector):
+    selector._sel = Rect(200, 260, 400, 240)
+    selector._sync_canvas()
+    selector._reposition_toolbar()
+    selector._on_action('text')
+    assert selector.rect().contains(selector._toolbar.geometry())
+    assert selector.rect().contains(selector._palette.geometry())
+    assert not selector._toolbar.geometry().intersects(selector._palette.geometry())

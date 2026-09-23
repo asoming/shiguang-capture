@@ -80,3 +80,26 @@ class TestIdentical:
 
     def test_shape_mismatch(self):
         assert not frames_identical(make_page(300), make_page(200))
+
+
+def test_high_dpi_viewport_overlap_larger_than_600_pixels():
+    page = make_page(2400, width=160)
+    overlap, sad = find_overlap(page[:1600], page[240:1840])
+    assert overlap == 1360
+    assert sad == 0
+    np.testing.assert_array_equal(stitch(page[:1600], page[240:1840], overlap), page[:1840])
+
+
+def test_faint_content_does_not_expand_match_within_one_level_of_error():
+    rng = np.random.default_rng(20)
+    page = np.repeat(rng.integers(250, 254, (1000, 1, 3), dtype=np.uint8), 80, axis=1)
+    overlap, sad = find_overlap(page[:600], page[190:790])
+    assert overlap == 410
+    assert sad == 0
+
+
+def test_repeated_content_is_not_silently_assumed_to_have_scrolled():
+    rows = make_page(40)
+    page = np.tile(rows, (20, 1, 1))
+    overlap, _ = find_overlap(page[:300], page[80:380])
+    assert overlap == 0

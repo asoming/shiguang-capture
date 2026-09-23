@@ -31,31 +31,27 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Verify source and completed workflows
         run: |
           python - <<'PY'
-          import json, os, re, subprocess
+          import json, os, re, subprocess, tomllib
+          version = tomllib.loads(open("pyproject.toml").read())["project"]["version"]
+          assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version), version
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"VERSION={version}\n")
           sha = os.environ['SOURCE_SHA']
           assert re.fullmatch('[0-9a-f]{40}', sha)
-          subprocess.run(['git', 'diff', '--exit-code', sha, 'HEAD', '--', 'src', 'pyproject.toml', 'requirements-linux.lock', 'scripts/build_exe.py', 'scripts/build_translation_models.py'], check=True)
+          subprocess.run(['git', 'diff', '--exit-code', sha, 'HEAD'], check=True)
           for key in ('CI_RUN', 'PACKAGES_RUN', 'NATIVE_RUN'):
               run = os.environ[key]
               assert run.isdigit()
               report = json.loads(subprocess.check_output(['gh', 'api', f'repos/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{run}']))
               assert report['head_sha'] == sha, (key, report['head_sha'])
               assert report['status'] == 'completed', key
-              if key != 'NATIVE_RUN':
-                  assert report['conclusion'] == 'success', (key, report['conclusion'])
-              else:
-                  jobs = json.loads(subprocess.check_output(['gh', 'api', f'repos/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{run}/jobs']))['jobs']
-                  for job in jobs:
-                      controls = [step for step in job['steps'] if 'recording controls' in step['name'] and step['conclusion'] != 'skipped']
-                      assert controls and all(step['conclusion']=='success' for step in controls), job['name']
-                      failures = [step['name'] for step in job['steps'] if step['conclusion']=='failure']
-                      if 'macos' in job['name']:
-                          assert set(failures) <= {'Repeat native macOS capture three times', 'Record native Windows or macOS window'}, failures
-                      else:
-                          assert job['conclusion'] == 'success', job['name']
+              assert report['conclusion'] == 'success', (key, report['conclusion'])
           PY
       - uses: actions/download-artifact@v4
         with:
@@ -84,37 +80,44 @@ jobs:
           stage/ShiguangCapture/ShiguangCapture --self-test > evidence/linux/ocr.log
           stage/ShiguangCapture/ShiguangCapture --translation-self-test > evidence/linux/translation.log
           stage/ShiguangCapture/ShiguangCapture --recording-self-test > evidence/linux/recording.log
-          test "$(cat stage/ShiguangCapture/VERSION)" = '1.4.3'
+          test "$(cat stage/ShiguangCapture/VERSION)" = "$VERSION"
       - name: Assemble packages and evidence
         run: |
           mkdir -p release
-          tar -czf release/ShiguangCapture-v1.4.3-Linux-x86_64.tar.gz -C stage ShiguangCapture
-          cp stage/packages/package-candidate-windows-2025/dist/ShiguangCapture-Windows-x86_64-preview.zip release/ShiguangCapture-v1.4.3-Windows-x86_64.zip
-          cp stage/packages/package-candidate-macos-14/dist/ShiguangCapture-macOS-arm64-preview.tar.gz release/ShiguangCapture-v1.4.3-macOS-arm64.tar.gz
+          tar -czf release/ShiguangCapture-v${VERSION}-Linux-x86_64.tar.gz -C stage ShiguangCapture
+          cp stage/packages/package-candidate-windows-2025/dist/ShiguangCapture-Windows-x86_64-preview.zip release/ShiguangCapture-v${VERSION}-Windows-x86_64.zip
+          cp stage/packages/package-candidate-macos-14/dist/ShiguangCapture-macOS-arm64-preview.tar.gz release/ShiguangCapture-v${VERSION}-macOS-arm64.tar.gz
           cp -R stage/packages/package-candidate-windows-2025/artifacts evidence/windows-package
+          cp -R stage/packages/package-candidate-macos-14/artifacts evidence/macos-package
           cp validation/PRD-ACCEPTANCE.md evidence/
+          cp "validation/RELEASE-${VERSION}.md" evidence/
           python - <<'PY'
-          import hashlib, json, os, pathlib, shutil
+          import hashlib, json, os, pathlib, shutil, tarfile, zipfile
           root = pathlib.Path('release')
+          version = os.environ['VERSION']
+          with zipfile.ZipFile(root/f'ShiguangCapture-v{version}-Windows-x86_64.zip') as archive:
+              assert archive.read('ShiguangCapture/VERSION').decode().strip() == version
+          with tarfile.open(root/f'ShiguangCapture-v{version}-macOS-arm64.tar.gz') as archive:
+              assert archive.extractfile('ShiguangCapture.app/Contents/Resources/VERSION').read().decode().strip() == version
           packages = []
           for path in sorted(root.iterdir()):
               packages.append({'file': path.name, 'bytes': path.stat().st_size, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
-          manifest = {'version': '1.4.3', 'source_sha': os.environ['SOURCE_SHA'], 'release_commit': os.environ['GITHUB_SHA'], 'packages': packages,
+          manifest = {'version': version, 'source_sha': os.environ['SOURCE_SHA'], 'release_commit': os.environ['GITHUB_SHA'], 'packages': packages,
                       'workflows': {key: f'https://github.com/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{os.environ[key]}' for key in ('CI_RUN','PACKAGES_RUN','NATIVE_RUN')},
-                      'known_limitations': 'See release notes and PRD-ACCEPTANCE.md; macOS native FPS is not a release blocker and is not counted as passed.'}
+                      'known_limitations': 'See release notes and PRD-ACCEPTANCE.md for scope and remaining unverified hardware scenarios.'}
           (root/'build-manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
           shutil.make_archive(str(root/'validation-evidence'), 'zip', 'evidence')
           (root/'SHA256SUMS').write_text(''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in sorted(root.iterdir())), encoding='ascii')
           PY
       - name: Create reviewable release draft
         run: |
-          if gh release view v1.4.3 --json isDraft > release-state.json 2>/dev/null; then
+          if gh release view v${VERSION} --json isDraft > release-state.json 2>/dev/null; then
             python -c "import json; assert json.load(open('release-state.json'))['isDraft'], 'Refusing to replace a published release'"
-            gh release edit v1.4.3 --target "$GITHUB_SHA" --title '拾光 Capture v1.4.3' --notes-file validation/RELEASE-1.4.3.md
+            gh release edit v${VERSION} --target "$GITHUB_SHA" --title "拾光 Capture v${VERSION}" --notes-file validation/RELEASE-${VERSION}.md
           else
-            gh release create v1.4.3 --draft --target "$GITHUB_SHA" --title '拾光 Capture v1.4.3' --notes-file validation/RELEASE-1.4.3.md
+            gh release create v${VERSION} --draft --target "$GITHUB_SHA" --title "拾光 Capture v${VERSION}" --notes-file validation/RELEASE-${VERSION}.md
           fi
-          gh release upload v1.4.3 release/* --clobber
+          gh release upload v${VERSION} release/* --clobber
       - uses: actions/upload-artifact@v4
         with:
           name: release-manifest

@@ -20,15 +20,15 @@
 
 ## 下载与体验
 
-| 系统 | 下载 v1.4.3 | 开始使用 |
+| 系统 | 下载 v1.4.8 | 开始使用 |
 | --- | --- | --- |
-| Windows x86_64 | [ZIP 压缩包](https://github.com/asoming/shiguang-capture/releases/download/v1.4.3/ShiguangCapture-v1.4.3-Windows-x86_64.zip) | 解压后运行 `ShiguangCapture.exe` |
-| macOS Apple Silicon | [TAR.GZ 压缩包](https://github.com/asoming/shiguang-capture/releases/download/v1.4.3/ShiguangCapture-v1.4.3-macOS-arm64.tar.gz) | 解压后将 `.app` 移入应用程序 |
-| Linux X11 x86_64 | [TAR.GZ 压缩包](https://github.com/asoming/shiguang-capture/releases/download/v1.4.3/ShiguangCapture-v1.4.3-Linux-x86_64.tar.gz) | 解压后运行 `./install-linux.sh` |
+| Windows x86_64 | [ZIP 压缩包](https://github.com/asoming/shiguang-capture/releases/download/v1.4.8/ShiguangCapture-v1.4.8-Windows-x86_64.zip) | 解压后运行 `ShiguangCapture.exe` |
+| macOS Apple Silicon | [TAR.GZ 压缩包](https://github.com/asoming/shiguang-capture/releases/download/v1.4.8/ShiguangCapture-v1.4.8-macOS-arm64.tar.gz) | 解压后将 `.app` 移入应用程序 |
+| Linux X11 x86_64 | [TAR.GZ 压缩包](https://github.com/asoming/shiguang-capture/releases/download/v1.4.8/ShiguangCapture-v1.4.8-Linux-x86_64.tar.gz) | 解压后运行 `./install-linux.sh` |
 
-[全部版本与发行说明](https://github.com/asoming/shiguang-capture/releases/latest) · [SHA256SUMS](https://github.com/asoming/shiguang-capture/releases/download/v1.4.3/SHA256SUMS) · [详细安装说明](guides/REFERENCE.md#安装已发布稳定版)
+[全部版本与发行说明](https://github.com/asoming/shiguang-capture/releases/latest) · [SHA256SUMS](https://github.com/asoming/shiguang-capture/releases/download/v1.4.8/SHA256SUMS) · [详细安装说明](guides/REFERENCE.md#安装已发布稳定版)
 
-Windows 包未签名，macOS 使用临时签名、未公证。macOS 录屏帧率可能偏低，系统声音尚未通过验收；多物理屏幕与部分权限恢复场景仍待实机验证。更多见[使用边界](guides/REFERENCE.md#实验与未覆盖范围)与[逐项验收记录](validation/PRD-ACCEPTANCE.md)。
+Windows 包未签名，macOS 使用临时签名、未公证。macOS 系统声音尚未通过验收；多物理屏幕与部分权限恢复场景仍待实机验证。更多见[使用边界](guides/REFERENCE.md#实验与未覆盖范围)与[逐项验收记录](validation/PRD-ACCEPTANCE.md)。
 
 ![白色录制台：选择录制范围、声音与保存位置，右侧连续预览](docs/assets/recording.png)
 
@@ -67,7 +67,7 @@ Windows 包未签名，macOS 使用临时签名、未公证。macOS 录屏帧率
 
 关闭窗口后会驻留托盘；完全退出请使用托盘菜单。Linux 安装脚本和 Windows `install-windows.ps1` 可创建桌面快捷方式。
 
-[完整快捷键](guides/REFERENCE.md#功能) · [安装与卸载](guides/REFERENCE.md) · [本版验证记录](validation/RELEASE-1.4.3.md)
+[完整快捷键](guides/REFERENCE.md#功能) · [安装与卸载](guides/REFERENCE.md) · [本版验证记录](validation/RELEASE-1.4.8.md)
 
 ## 反馈与参与
 
