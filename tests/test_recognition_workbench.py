@@ -1,5 +1,6 @@
 """Work through the real workbench controls without an OCR service or desktop clipboard."""
 import json
+import time
 from copy import deepcopy
 
 import pytest
@@ -132,7 +133,10 @@ def test_copy_and_low_confidence_feedback_are_visible_then_expire(panel, monkeyp
     assert panel.feedback.isVisible()
     assert panel.feedback.text() == '已复制识别内容'
     panel.feedback_timer.start(1)
-    QTest.qWait(20)
+    # Shared CI runners can postpone Qt's first timer dispatch beyond 20 ms.
+    deadline = time.monotonic() + 1
+    while panel.feedback.isVisible() and time.monotonic() < deadline:
+        QTest.qWait(10)
     assert not panel.feedback.isVisible()
 
 
