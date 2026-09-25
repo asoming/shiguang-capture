@@ -100,8 +100,11 @@ def main() -> int:
         problems.append("识图面板原文未渲染")
     if panel.right.isVisible():
         problems.append("识图模式不应显示译文栏")
-    if panel.copy_target.isVisible():
-        problems.append("识图模式不应显示「复制译文」按钮")
+    from PySide6.QtWidgets import QMenu
+    result_menu = QMenu(panel)
+    panel._populate_result_menu(result_menu)
+    if panel.copy_target in result_menu.actions() or panel.copy_target.isEnabled():
+        problems.append("识图模式不应提供「复制译文」操作")
     print(f"识图面板 OK · 标题={panel.head.text()!r} · 元信息={panel.meta.text()!r}")
 
     # ---- 2. 结果面板：翻译模式 ----

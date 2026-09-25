@@ -184,13 +184,13 @@ def test_export_uses_edited_table_values(panel, monkeypatch, tmp_path, extension
     panel._export_output(extension)
     assert destination.is_file()
     if extension == 'json':
-        assert json.loads(destination.read_text())['cells'][1] == ['00123', '已完成']
+        assert json.loads(destination.read_text(encoding='utf-8'))['cells'][1] == ['00123', '已完成']
     elif extension == 'xlsx':
         import openpyxl
         sheet = openpyxl.load_workbook(destination).active
         assert sheet.cell(2, 1).value == '00123'
         assert sheet.cell(2, 2).value == '已完成'
     else:
-        assert '00123' in destination.read_text()
-        assert '已完成' in destination.read_text()
+        assert '00123' in destination.read_text(encoding='utf-8')
+        assert '已完成' in destination.read_text(encoding='utf-8')
     assert panel.feedback.text() == '文件已导出'
