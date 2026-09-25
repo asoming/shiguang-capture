@@ -194,9 +194,9 @@ class AppController:
             panel.format_changed.connect(self._remember_output_format)
             panel.capture_requested.connect(self.start_region_capture)
             panel.record_requested.connect(self.open_recording)
-            panel.open_requested.connect(self.open_image)
-            panel.paste_requested.connect(self.paste_image)
-            panel.file_dropped.connect(self.open_image)
+            panel.open_requested.connect(lambda: self.open_image(recognize=True))
+            panel.paste_requested.connect(lambda: self.paste_image(recognize=True))
+            panel.file_dropped.connect(lambda path: self.open_image(path, recognize=True))
             panel.image_edited.connect(self._image_changed)
             panel.cancel_requested.connect(self.cancel_recognition)
             panel.save_image_requested.connect(self.save_as)
@@ -212,7 +212,7 @@ class AppController:
         try:
             self.config.save()
         except OSError:
-            self._panel.gloss.setText('格式已在本次会话记住；配置目录暂不可写。')
+            self._panel.show_error('格式已在本次会话记住；配置目录暂不可写。')
 
     def open_recording(self):
         if self._launcher:
@@ -284,7 +284,7 @@ class AppController:
         self.cancel_recognition()
         self._last_image = None  # Never retain an unredacted fallback after edits.
 
-    def open_image(self, path=None):
+    def open_image(self, path=None, *, recognize=False, mode=None):
         if not isinstance(path, str):
             path, _ = QFileDialog.getOpenFileName(self._panel, '打开图片', '', '图片 (*.png *.jpg *.jpeg)')
         if not path:
@@ -294,16 +294,22 @@ class AppController:
         except (ValueError, OSError) as exc:
             self._error(str(exc))
             return
-        self.edit_image(image)
+        if recognize:
+            self._begin_recognition(image, mode or (self._panel._mode if self._panel else 'ocr'))
+        else:
+            self.edit_image(image)
 
-    def paste_image(self):
+    def paste_image(self, *, recognize=False):
         image = QGuiApplication.clipboard().image()
         try:
             validate_size(image.width(), image.height())
         except ValueError as exc:
             self._error(str(exc))
             return
-        self.edit_image(image)
+        if recognize:
+            self._begin_recognition(image, self._panel._mode if self._panel else 'ocr')
+        else:
+            self.edit_image(image)
 
     def start_region_capture(self):
         self._start_selector(False)
@@ -480,8 +486,7 @@ class AppController:
         if image.isNull():
             image = self._last_image
         if image is None or image.isNull():
-            self.open_image()
-            self._error('打开图片后，点击识别文字。')
+            self.open_image(recognize=True, mode='ocr')
             return
         self._begin_recognition(image, 'ocr')
 
@@ -607,7 +612,7 @@ class AppController:
         self.pin_image(image)
 
     def toggle_pins(self):
-        self._pins_hidden = not self._pins_hidden
+        self._pins_hidden = any(pin.isVisible() for pin in self._pins)
         for pin in self._pins:
             pin.setVisible(not self._pins_hidden)
 
@@ -650,6 +655,9 @@ class AppController:
             return
         win = SettingsWindow(self.config)
         win.settings_saved.connect(self.apply_config)
+        win.capture_requested.connect(self.start_region_capture)
+        win.record_requested.connect(self.open_recording)
+        win.recognize_requested.connect(self.open_workspace)
         win.check_update_requested.connect(lambda: self.check_updates(manual=True))
         win.destroyed.connect(lambda: setattr(self, '_settings', None))
         self._settings = win
@@ -698,7 +706,7 @@ class AppController:
     def _error(self, message):
         self.tray.notify('拾光 Capture', message)
         if self._panel:
-            self._panel.gloss.setText(message)
+            self._panel.show_error(message)
         if self._settings and self._settings.isVisible():
             self._settings.status.setText(message)
 

@@ -62,6 +62,34 @@ def test_padded_rgb_rows(width):
     assert (data == 255).all()
 
 
+def test_ocr_shortcut_import_does_not_inherit_table_mode(controller, app, monkeypatch, tmp_path):
+    path = tmp_path / 'source.png'
+    image().save(str(path))
+    panel = controller.open_workspace()
+    panel._mode = 'table'
+    app.clipboard().clear()
+    controller._last_image = None
+    monkeypatch.setattr('shiguang_capture.app.QFileDialog.getOpenFileName', lambda *args: (str(path), ''))
+    recognized = []
+    monkeypatch.setattr(controller, '_begin_recognition', lambda image, mode: recognized.append(mode))
+    controller.ocr_recognize()
+    assert recognized == ['ocr']
+    controller.open_image(str(path), recognize=True)
+    assert recognized == ['ocr', 'table']
+
+
+def test_globally_restore_a_pin_hidden_through_its_own_menu(controller):
+    pin = controller.pin_image(image())
+    try:
+        pin.hide()
+        controller.toggle_pins()
+        assert pin.isVisible()
+        controller.toggle_pins()
+        assert not pin.isVisible()
+    finally:
+        pin.close()
+
+
 def test_null_image_does_not_claim_saved(tmp_path):
     with pytest.raises(ValueError):
         save_image(QImage(), tmp_path/'none.png')

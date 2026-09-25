@@ -27,8 +27,12 @@ def parse_version(text: str) -> tuple[int, int, int]:
 
 
 def is_newer(latest: str, current: str) -> bool:
-    """latest 是否比 current 新（仅比较数值三元组，预发布后缀忽略）。"""
-    return parse_version(latest) > parse_version(current)
+    """Compare release numbers and let a trial build upgrade to its stable release."""
+    latest_number, current_number = parse_version(latest), parse_version(current)
+    if latest_number != current_number:
+        return latest_number > current_number
+    stable = r'v?\d+\.\d+\.\d+(?:\+.*)?'
+    return bool(re.fullmatch(stable, latest.strip()) and not re.fullmatch(stable, current.strip()))
 
 
 @dataclass

@@ -37,6 +37,12 @@ class TestIsNewer:
     def test_older_is_not_newer(self):
         assert not is_newer("0.9.9", "1.0.0")
 
+    def test_trial_can_upgrade_to_same_number_stable_release(self):
+        assert is_newer("v1.5.0", "1.5.0b1")
+        assert is_newer("v1.5.0", "1.5.0-rc.1")
+        assert not is_newer("1.5.0b1", "1.5.0")
+        assert not is_newer("1.5.0+build.2", "1.5.0+build.1")
+
 
 class TestParseReleasePayload:
     def test_full(self):

@@ -116,6 +116,10 @@ def main() -> int:
     import shutil
     from collect_licenses import collect
     bundle = exe.parent
+    if sys.platform.startswith('linux'):
+        # A custom path may use the real filename (e.g. .so.0.0.0), while Qt
+        # loads the library by SONAME. Keep that name in the standalone bundle.
+        shutil.copy2(cursor_lib, bundle / '_internal/libxcb-cursor.so.0')
     from shiguang_capture import __version__
     (bundle/'VERSION').write_text(__version__+'\n', encoding='ascii')
     # PDF decoding and the virtual keyboard are not product features. Do not ship

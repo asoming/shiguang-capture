@@ -10,10 +10,10 @@ from PySide6.QtCore import QEvent, QPointF, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
                               QPushButton, QComboBox, QFileDialog, QLineEdit,
-                              QTabBar, QStackedWidget, QFrame)
+                              QTabBar, QStackedWidget, QFrame, QButtonGroup, QToolButton)
 
 from ..recording.worker import RecordingOptions, record, probe_audio, probe_windows
-from .record_style import RECORD_STYLE, LIBRARY_STYLE
+from .record_style import RECORD_STYLE
 from .live_preview import LivePreview
 from .record_overlay import CountdownOverlay, RecordingOrb
 from .tool_icons import tool_icon
@@ -54,8 +54,8 @@ class RecordPanel(QWidget):
         self.current_path = None
         self.countdown = 0
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(24, 14, 24, 22)
-        outer.setSpacing(16)
+        outer.setContentsMargins(28, 12, 28, 22)
+        outer.setSpacing(20)
         self.tabs = QTabBar()
         self.tabs.setExpanding(False)
         self.tabs.setDrawBase(False)
@@ -66,68 +66,106 @@ class RecordPanel(QWidget):
         record_page = QWidget()
         self.pages.addWidget(record_page)
         self.library = RecordingLibrary()
-        self.library.setStyleSheet(LIBRARY_STYLE)
         self.pages.addWidget(self.library)
         outer.addWidget(self.pages, 1)
         self.tabs.currentChanged.connect(self._switch_page)
         layout = QVBoxLayout(record_page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(20)
+        layout.setSpacing(14)
         content = QHBoxLayout()
-        content.setSpacing(28)
+        content.setSpacing(30)
         self.fields = QWidget(objectName='recordFields')
-        form = QFormLayout(self.fields)
-        self.form = form
-        form.setContentsMargins(18, 22, 18, 22)
-        form.setVerticalSpacing(18)
+        controls = QVBoxLayout(self.fields)
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(10)
+        controls.addWidget(QLabel('录制范围', objectName='fieldLabel'))
+        scope = QWidget(objectName='scopeSegments')
+        segments = QHBoxLayout(scope)
+        segments.setContentsMargins(4, 4, 4, 4)
+        segments.setSpacing(3)
+        self.scope_group = QButtonGroup(self)
+        self.full_button = QPushButton('全屏')
+        self.region_button = QPushButton('区域')
+        self.window_button = QPushButton('窗口')
+        for button in (self.full_button, self.region_button, self.window_button):
+            button.setCheckable(True)
+            button.setMinimumHeight(34)
+            self.scope_group.addButton(button)
+            segments.addWidget(button)
+        self.full_button.setChecked(True)
+        self.full_button.clicked.connect(self._clear_region)
+        self.region_button.clicked.connect(self._request_region)
+        self.window_button.clicked.connect(self._choose_window)
+        controls.addWidget(scope)
         self.screen = RecordingComboBox()
+        self.screen.setAccessibleName('录制屏幕')
         for index, screen in enumerate(QGuiApplication.screens()):
-            form_label = f'屏幕 {index + 1} · {screen.geometry().width()} × {screen.geometry().height()}'
-            self.screen.addItem(form_label, screen.name())
+            label = f'屏幕 {index + 1} · {screen.geometry().width()} × {screen.geometry().height()}'
+            self.screen.addItem(label, screen.name())
         self.screen.currentIndexChanged.connect(self._clear_region)
-        form.addRow('录制屏幕', self.screen)
-        self.region_button = QPushButton('区域…')
-        self.region_button.clicked.connect(self.choose_region.emit)
-        full = QPushButton('全屏')
-        full.clicked.connect(self._clear_region)
-        bounds = QHBoxLayout()
-        bounds.setSpacing(6)
-        bounds.addWidget(self.region_button, 1)
-        bounds.addWidget(full)
-        choose_window = QPushButton('窗口…')
-        choose_window.clicked.connect(self._choose_window)
-        bounds.addWidget(choose_window)
-        form.addRow('范围', bounds)
+        controls.addWidget(self.screen)
+        self.scope_hint = QLabel('录制整个屏幕', objectName='muted')
+        self.scope_hint.setWordWrap(True)
+        controls.addWidget(self.scope_hint)
+        controls.addSpacing(10)
+        controls.addWidget(QLabel('录制声音', objectName='fieldLabel'))
         self.audio = RecordingComboBox()
+        self.audio.setAccessibleName('录制声音')
         for text, value in [('不录声音', 'none'), ('麦克风', 'mic'), ('系统声音', 'system'), ('系统声音 + 麦克风', 'both')]:
             self.audio.addItem(text, value)
         self.audio.currentIndexChanged.connect(self._audio_changed)
-        form.addRow('声音', self.audio)
+        controls.addWidget(self.audio)
+        self.audio_details_button = QToolButton()
+        self.audio_details_button.setText('选择音频设备')
+        self.audio_details_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.audio_details_button.setArrowType(Qt.ArrowType.RightArrow)
+        self.audio_details_button.setCheckable(True)
+        self.audio_details_button.toggled.connect(self._show_audio_details)
+        self.audio_details_button.hide()
+        controls.addWidget(self.audio_details_button)
+        self.audio_details = QWidget(objectName='audioDetails')
+        self.form = QFormLayout(self.audio_details)
+        self.form.setContentsMargins(0, 4, 0, 4)
+        self.form.setSpacing(8)
+        self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         self.microphone, self.system_audio = RecordingComboBox(), RecordingComboBox()
-        form.addRow('麦克风', self.microphone)
-        form.addRow('系统音源', self.system_audio)
-        self.microphone.setEnabled(False)
-        self.system_audio.setEnabled(False)
-        form.setRowVisible(self.microphone, False)
-        form.setRowVisible(self.system_audio, False)
+        self.microphone.setAccessibleName('麦克风设备')
+        self.system_audio.setAccessibleName('系统音源设备')
+        self.form.addRow('麦克风', self.microphone)
+        self.form.addRow('系统音源', self.system_audio)
+        self.audio_details.hide()
+        controls.addWidget(self.audio_details)
+        controls.addSpacing(10)
+        quality = QHBoxLayout()
+        quality.addWidget(QLabel('帧率', objectName='fieldLabel'))
+        quality.addStretch()
         self.fps = RecordingComboBox()
+        self.fps.setAccessibleName('录制帧率')
+        self.fps.setMinimumWidth(112)
         for fps in (15, 30, 60):
             self.fps.addItem(f'{fps} fps', fps)
         self.fps.setCurrentIndex(1)
-        form.addRow('帧率', self.fps)
+        quality.addWidget(self.fps)
+        controls.addLayout(quality)
+        controls.addStretch()
+        controls.addWidget(QLabel('保存位置', objectName='fieldLabel'))
         self.folder = QLineEdit(str(Path(folder or '~/Videos/Shiguang').expanduser()))
+        self.folder.setAccessibleName('录屏保存位置')
         self.folder.editingFinished.connect(self._folder_edited)
         folder_row = QHBoxLayout()
+        folder_row.setSpacing(6)
         folder_row.addWidget(self.folder, 1)
         browse = QPushButton('…')
+        browse.setFixedWidth(36)
+        browse.setToolTip('选择保存文件夹')
+        browse.setAccessibleName('选择录屏保存文件夹')
         browse.clicked.connect(self._choose_folder)
         folder_row.addWidget(browse)
-        form.addRow('保存位置', folder_row)
-        self.fields.setFixedWidth(370)
+        controls.addLayout(folder_row)
+        self.fields.setFixedWidth(300)
         content.addWidget(self.fields)
-        monitor = QFrame(objectName='liveMonitor')
-        preview_column = QVBoxLayout(monitor)
-        preview_column.setContentsMargins(16, 16, 16, 16)
+        preview_column = QVBoxLayout()
+        preview_column.setSpacing(12)
         monitor_header = QHBoxLayout()
         self.preview_badge = QLabel('● 实时预览', objectName='monitorTitle')
         self.preview_size = QLabel('', objectName='muted')
@@ -135,52 +173,62 @@ class RecordPanel(QWidget):
         monitor_header.addStretch()
         monitor_header.addWidget(self.preview_size)
         preview_column.addLayout(monitor_header)
+        monitor = QFrame(objectName='liveMonitor')
+        monitor_layout = QVBoxLayout(monitor)
+        monitor_layout.setContentsMargins(16, 16, 16, 16)
         self.preview = QLabel('正在连接画面…')
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumSize(360, 220)
         self.preview.setWordWrap(True)
-        self.preview.setStyleSheet('background:#F0F5FC; color:#6986A7; border:0;')
+        self.preview.setObjectName('livePicture')
         self.preview_image = None
-        preview_column.addWidget(self.preview, 1)
+        monitor_layout.addWidget(self.preview, 1)
+        self.preview_retry = QPushButton('重新连接预览')
+        self.preview_retry.setObjectName('quiet')
+        self.preview_retry.clicked.connect(lambda: self.live_preview.restart())
+        self.preview_retry.hide()
+        monitor_layout.addWidget(self.preview_retry, 0, Qt.AlignmentFlag.AlignHCenter)
+        preview_column.addWidget(monitor, 1)
         self.preview_scope = QLabel('全屏', objectName='muted')
+        self.preview_scope.setWordWrap(True)
         preview_column.addWidget(self.preview_scope)
-        content.addWidget(monitor, 1)
+        content.addLayout(preview_column, 1)
         layout.addLayout(content, 1)
         self.status = QLabel('', objectName='recordStatus')
         self.status.setWordWrap(True)
+        self.status.setMinimumHeight(20)
         layout.addWidget(self.status)
-        buttons = QHBoxLayout()
-        self.start_button = QPushButton('', objectName='primary')
+        footer = QFrame(objectName='recordFooter')
+        buttons = QHBoxLayout(footer)
+        buttons.setContentsMargins(0, 16, 0, 0)
+        buttons.setSpacing(12)
+        self.start_button = QPushButton('开始录制', objectName='primary')
         self.start_button.setIcon(tool_icon('play', '#FFFFFF'))
-        self.start_button.setFixedSize(64, 64)
+        self.start_button.setFixedSize(142, 44)
         self.start_button.setToolTip('开始录制')
         self.start_button.setAccessibleName('开始录制')
         self.start_button.clicked.connect(self.toggle)
         self.stop_button = QPushButton('', objectName='stopRecord')
-        self.stop_button.setIcon(tool_icon('stop', '#FF879E'))
+        self.stop_button.setIcon(tool_icon('stop', '#E35E6C'))
         self.stop_button.setToolTip('停止并保存')
         self.stop_button.setAccessibleName('停止并保存')
-        self.stop_button.setFixedSize(48, 48)
+        self.stop_button.setFixedSize(44, 44)
         self.stop_button.clicked.connect(self.stop)
         self.stop_button.setEnabled(False)
         buttons.addWidget(self.start_button)
         buttons.addWidget(self.stop_button)
-        buttons.addSpacing(26)
+        buttons.addSpacing(12)
         self.elapsed = QLabel('00:00:00', objectName='recordClock')
         buttons.addWidget(self.elapsed)
         buttons.addStretch()
-        layout.addLayout(buttons)
-        footer = QHBoxLayout()
-        recover = QPushButton('恢复录制…')
-        recover.clicked.connect(self._recover)
-        self.open_button = QPushButton('打开视频')
+        self.recover_button = QPushButton('恢复录制…', objectName='quiet')
+        self.recover_button.clicked.connect(self._recover)
+        self.open_button = QPushButton('打开视频', objectName='quiet')
         self.open_button.setEnabled(False)
         self.open_button.clicked.connect(lambda: self.library.open_path(self.last_path))
-        footer.addStretch()
-        footer.addWidget(recover)
-        footer.addWidget(self.open_button)
-        layout.addLayout(footer)
-        self.recover_button = recover
+        buttons.addWidget(self.recover_button)
+        buttons.addWidget(self.open_button)
+        layout.addWidget(footer)
 
         self.bar = RecordingOrb()
         self.bar.stop_requested.connect(self.stop)
@@ -198,6 +246,7 @@ class RecordPanel(QWidget):
         self.live_preview = LivePreview(self)
         self.live_preview.frame_ready.connect(self._preview_frame)
         self.live_preview.failed.connect(self._preview_failed)
+        self.live_preview.recovering.connect(self._preview_recovering)
         QGuiApplication.instance().aboutToQuit.connect(self.live_preview.stop)
         self.destroyed.connect(self.live_preview.stop)
 
@@ -237,16 +286,23 @@ class RecordPanel(QWidget):
         self.live_preview.start(*target)
 
     def _preview_frame(self, image, source_size):
+        self.preview_retry.hide()
         self.preview_image = QPixmap.fromImage(image)
         self.preview_size.setText(f'{source_size[0]} × {source_size[1]}')
         self.preview_badge.setText('● 实时预览')
         self._fit_preview()
+
+    def _preview_recovering(self, message):
+        self.preview_badge.setText('◌ 正在重连')
+        self.preview.setText(message)
+        self.preview_retry.hide()
 
     def _preview_failed(self, message):
         self.preview_image = None
         self.preview.clear()
         self.preview.setText(message)
         self.preview_badge.setText('○ 预览不可用')
+        self.preview_retry.show()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -280,14 +336,27 @@ class RecordPanel(QWidget):
     def _clear_region(self, *_):
         self.region = None
         self.window_title = None
-        self.region_button.setText('区域…')
+        self.region_button.setText('区域')
+        self._sync_scope_buttons()
         if hasattr(self, 'preview'):
             self.preview.clear()
             self.preview.setText('正在连接画面…')
             self.preview_image = None
             self._sync_preview()
 
+    def _request_region(self):
+        self._sync_scope_buttons()  # Keep the current target when selection is cancelled.
+        self.choose_region.emit()
+
+    def _sync_scope_buttons(self):
+        chosen = self.window_button if self.window_title else self.region_button if self.region else self.full_button
+        chosen.setChecked(True)
+        text = (self.window_title if self.window_title else
+                f'{self.region[2]} × {self.region[3]} · 点击区域可重选' if self.region else '录制整个屏幕')
+        self.scope_hint.setText(text)
+
     def _choose_window(self):
+        self._sync_scope_buttons()
         if self.window_probe:
             return
         context = multiprocessing.get_context('spawn')
@@ -308,8 +377,9 @@ class RecordPanel(QWidget):
         self.screen.setCurrentIndex(self.screen.findData(screen.name()))
         self.region = (rect.x, rect.y, rect.width, rect.height)
         self.window_title = None
-        self.region_button.setText('重选区域')
+        self.region_button.setText('区域')
         self.region_button.setToolTip(f'{rect.width} × {rect.height}')
+        self._sync_scope_buttons()
         self._sync_preview()
 
     def _choose_folder(self):
@@ -318,13 +388,18 @@ class RecordPanel(QWidget):
             self.folder.setText(path)
             self._folder_edited()
 
+    def _show_audio_details(self, expanded):
+        self.audio_details.setVisible(expanded and self.audio.currentData() != 'none')
+        self.audio_details_button.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+
     def _audio_changed(self):
         mode = self.audio.currentData()
         self.microphone.setEnabled(mode in ('mic', 'both'))
         self.system_audio.setEnabled(mode in ('system', 'both'))
         self.form.setRowVisible(self.microphone, mode in ('mic', 'both'))
         self.form.setRowVisible(self.system_audio, mode in ('system', 'both'))
-        self.adjustSize()
+        self.audio_details_button.setVisible(mode != 'none')
+        self._show_audio_details(self.audio_details_button.isChecked())
         if mode == 'none' or self.probe or self.microphone.count() or self.system_audio.count():
             return
         context = multiprocessing.get_context('spawn')
@@ -423,7 +498,8 @@ class RecordPanel(QWidget):
         self.fields.setEnabled(True)
         self.recover_button.setEnabled(True)
         self.start_button.setEnabled(True)
-        self.start_button.setText('')
+        self.start_button.setText('开始录制')
+        self.start_button.setAccessibleName('开始录制')
         self.start_button.setIcon(tool_icon('play', '#FFFFFF'))
         self.stop_button.setEnabled(False)
         self.stop_button.setToolTip('停止并保存')
@@ -447,8 +523,9 @@ class RecordPanel(QWidget):
                         title, accepted = QInputDialog.getItem(self, '选择录制窗口', '窗口', event['windows'], 0, False)
                         if accepted:
                             self.window_title, self.region = title, None
-                            self.region_button.setText('区域…')
+                            self.region_button.setText('区域')
                             self.region_button.setToolTip(title)
+                            self._sync_scope_buttons()
                             self._sync_preview()
                         self.status.clear()
                     else:
@@ -519,7 +596,9 @@ class RecordPanel(QWidget):
             self.bar.set_state(kind)
             self.start_button.setEnabled(True)
             text = '继续' if kind == 'paused' else '暂停'
-            self.start_button.setToolTip(text)
+            self.start_button.setToolTip(text+'录制')
+            self.start_button.setText(text+'录制')
+            self.start_button.setAccessibleName(text+'录制')
             self.start_button.setIcon(tool_icon('play' if kind == 'paused' else 'pause', '#FFFFFF'))
             if kind == 'paused':
                 self.clock.setText('Ⅱ 已暂停')

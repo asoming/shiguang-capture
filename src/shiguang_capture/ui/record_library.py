@@ -4,13 +4,17 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QFile, QFileSystemWatcher, QTimer, Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QFile, QFileSystemWatcher, QTimer, Qt, QUrl, QSize
+from PySide6.QtGui import QDesktopServices, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu,
-    QMessageBox, QPushButton, QStackedWidget, QToolButton, QTreeWidget,
+    QMessageBox, QPushButton, QStackedWidget, QToolButton, QTreeWidget, QInputDialog,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
+
+from .record_metadata import VideoMetadataLoader
+from .record_style import LIBRARY_STYLE
+from .tool_icons import tool_icon
 
 VIDEO_SUFFIXES = {'.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v'}
 
@@ -30,19 +34,16 @@ class RecordingLibrary(QWidget):
         self.active_path: Path | None = None
         self._listing_key = None
         self._menu_open = False
-        self.setStyleSheet('''
-            QTreeWidget {background:white; border:0; outline:0;}
-            QTreeWidget::item {height:56px; border-bottom:1px solid #EDF2F8;}
-            QTreeWidget::item:selected {background:#E5F2FF; color:#24394B;}
-            QHeaderView::section {background:#F7FAFF; color:#657D8E;
-                                  border:0; padding:10px; text-align:left;}
-            QToolButton {border:0; border-radius:6px; font-size:24px; background:transparent;}
-            QToolButton:hover {background:#DDEEFF; color:#3188F5;}
-            QToolButton::menu-indicator {image:none;}
-            QMenu {background:white; border:1px solid #DCE7F4; padding:5px;}
-            QMenu::item {padding:9px 24px;}
-            QMenu::item:selected {background:#E5F2FF;}
-        ''')
+        self._metadata_items = {}
+        self._read_error = ''
+        self._total_bytes = 0
+        self.setStyleSheet(LIBRARY_STYLE)
+        self.metadata = VideoMetadataLoader(self)
+        self.metadata.ready.connect(self._metadata_ready)
+        self.metadata_timer = QTimer(self)
+        self.metadata_timer.setSingleShot(True)
+        self.metadata_timer.setInterval(80)
+        self.metadata_timer.timeout.connect(self._request_metadata)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
@@ -50,7 +51,12 @@ class RecordingLibrary(QWidget):
         self.location = QLineEdit()
         self.location.setReadOnly(True)
         self.location.setAccessibleName('录屏保存文件夹')
-        header.addWidget(self.location, 1)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText('搜索录屏文件')
+        self.search.setAccessibleName('搜索录屏文件')
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._apply_filter)
+        header.addWidget(self.search, 1)
         open_folder = QPushButton('打开文件夹')
         open_folder.clicked.connect(lambda: self.open_path(self.folder))
         header.addWidget(open_folder)
@@ -59,21 +65,25 @@ class RecordingLibrary(QWidget):
         header.addWidget(refresh)
         layout.addLayout(header)
         self.table = QTreeWidget()
-        self.table.setColumnCount(4)
-        self.table.setHeaderLabels(['文件名', '大小', '修改时间', ''])
+        self.table.setColumnCount(5)
+        self.table.setHeaderLabels(['名称', '大小', '录制时间', '', '时长'])
+        # Keep existing logical columns stable for native acceptance/file actions.
+        self.table.header().moveSection(4, 1)
+        self.table.setIconSize(QSize(96, 54))
         self.table.setRootIsDecorated(False)
         self.table.setUniformRowHeights(True)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.header().setStretchLastSection(False)
         self.table.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for column, width in ((1, 110), (2, 175), (3, 60)):
+        for column, width in ((1, 108), (2, 170), (3, 48), (4, 80)):
             self.table.header().setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(column, width)
+        self.table.verticalScrollBar().valueChanged.connect(lambda _: self.metadata_timer.start())
         self.table.itemDoubleClicked.connect(lambda item, _: self.open_path(Path(item.data(0, Qt.ItemDataRole.UserRole))))
         self.empty = QLabel('还没有录屏文件')
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty.setStyleSheet('color:#657D8E; font-size:15px;')
+        self.empty.setStyleSheet('color:#8B9AAF; font-size:14px;')
         self.content = QStackedWidget()
         self.content.addWidget(self.table)
         self.content.addWidget(self.empty)
@@ -81,6 +91,7 @@ class RecordingLibrary(QWidget):
         self.summary = QLabel()
         self.summary.setObjectName('muted')
         self.summary.setWordWrap(True)
+        layout.addWidget(self.location)
         layout.addWidget(self.summary)
         self.watcher = QFileSystemWatcher(self)
         self.refresh_timer = QTimer(self)
@@ -98,6 +109,17 @@ class RecordingLibrary(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self.refresh()
+        self.metadata_timer.start()
+
+    def hideEvent(self, event):
+        self.metadata_timer.stop()
+        self.metadata.stop()
+        super().hideEvent(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'metadata_timer'):
+            self.metadata_timer.start()
 
     def refresh(self):
         if self._menu_open:
@@ -129,19 +151,28 @@ class RecordingLibrary(QWidget):
                 self.watcher.addPaths(desired)
         records.sort(key=lambda record: (-record[1].st_mtime, record[0].name))
         key = (self.folder, error, tuple((path, stat.st_size, stat.st_mtime_ns) for path, stat in records))
-        self.summary.setText(error or f'{len(records)} 个文件 · {file_size(sum(stat.st_size for _, stat in records))}')
+        self._read_error = error
+        self._total_bytes = sum(stat.st_size for _, stat in records)
         if key == self._listing_key:
+            self._apply_filter()
             return  # Unrelated files should not disturb selection or menus.
         self._listing_key = key
         selected = self.table.currentItem()
         selected_path = selected.data(0, Qt.ItemDataRole.UserRole) if selected else None
         self.table.clear()
+        self._metadata_items.clear()
         for path, stat in records:
             item = QTreeWidgetItem([path.name, file_size(stat.st_size),
-                                    datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M'), ''])
+                                    datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M'), '', '—'])
             item.setData(0, Qt.ItemDataRole.UserRole, str(path))
             item.setToolTip(0, path.name)
+            item.setIcon(0, tool_icon('play', '#A4BADC'))
+            metadata_key = (str(path), stat.st_size, stat.st_mtime_ns)
+            self._metadata_items[metadata_key] = item
             self.table.addTopLevelItem(item)
+            cached = self.metadata.get(metadata_key)
+            if cached is not None:
+                self._metadata_ready(metadata_key, cached)
             button = QToolButton()
             button.setText('⋯')
             button.setToolTip('更多操作')
@@ -151,8 +182,86 @@ class RecordingLibrary(QWidget):
             self.table.setItemWidget(item, 3, button)
             if str(path) == selected_path:
                 self.table.setCurrentItem(item)
-        self.content.setCurrentWidget(self.table if records else self.empty)
-        self.empty.setText('无法读取文件夹' if error else '还没有录屏文件')
+        self._apply_filter()
+
+    def _apply_filter(self):
+        query = self.search.text().strip().casefold()
+        count = 0
+        total = self.table.topLevelItemCount()
+        for index in range(total):
+            item = self.table.topLevelItem(index)
+            match = query in item.text(0).casefold()
+            item.setHidden(not match)
+            count += match
+        self.content.setCurrentWidget(self.table if count else self.empty)
+        message = ('无法读取文件夹' if self._read_error else
+                   '没有匹配的录屏文件' if query and total else '还没有录屏文件')
+        self.empty.setText(message)
+        summary = f'{total} 个文件 · {file_size(self._total_bytes)}'
+        if query:
+            summary = f'找到 {count} / {total} 个文件'
+        self.summary.setText(self._read_error or summary)
+        self.metadata_timer.start()
+
+    def _request_metadata(self):
+        if not self.isVisible():
+            return
+        visible = self.table.viewport().rect().adjusted(0, -160, 0, 160)
+        keys = [key for key, item in self._metadata_items.items()
+                if not item.isHidden() and self.table.visualItemRect(item).intersects(visible)]
+        self.metadata.request(keys)
+
+    def _metadata_ready(self, key, details):
+        item = self._metadata_items.get(key)
+        if item is None:
+            return
+        if details.duration is not None:
+            seconds = round(details.duration)
+            hours, rest = divmod(seconds, 3600)
+            minutes, seconds = divmod(rest, 60)
+            value = f'{hours}:{minutes:02d}:{seconds:02d}' if hours else f'{minutes:02d}:{seconds:02d}'
+            item.setText(4, value)
+        item.setToolTip(4, details.error or '')
+        if details.width and details.height:
+            item.setToolTip(0, f'{Path(key[0]).name}\n{details.width} × {details.height}')
+        if details.pixels:
+            image = QImage(details.pixels, details.thumbnail_width, details.thumbnail_height,
+                           details.thumbnail_width * 3, QImage.Format.Format_RGB888).copy()
+            item.setIcon(0, QIcon(QPixmap.fromImage(image)))
+
+    def rename_file(self, path: Path, new_name: str | None = None):
+        if path == self.active_path or path.is_symlink():
+            self.summary.setText('这个文件当前不能重命名。')
+            return False
+        if new_name is None:
+            new_name, accepted = QInputDialog.getText(self, '重命名录屏', '文件名', text=path.name)
+            if not accepted:
+                return False
+        name = new_name.strip()
+        if (not name or name.startswith('.') or name.endswith('.') or
+                any(char in name for char in '/\\\x00<>:"|?*') or any(ord(char) < 32 for char in name)):
+            self.summary.setText('请输入有效文件名，不要包含路径或特殊字符。')
+            return False
+        if not name.lower().endswith(path.suffix.lower()):
+            name += path.suffix
+        target = path.with_name(name)
+        if target == path:
+            return True
+        self.metadata.stop()  # Release the decoder's file handle before renaming on Windows.
+        file = QFile(str(path))
+        # QFile.rename refuses existing targets, including a race after validation.
+        if not file.rename(str(target)):
+            self.summary.setText('无法重命名，请检查同名文件、权限或文件是否正在使用。')
+            self.metadata_timer.start()
+            return False
+        previous_key = next((key for key in self._metadata_items if key[0] == str(path)), None)
+        cached = self.metadata.get(previous_key) if previous_key else None
+        if cached is not None:
+            self.metadata.cache.pop(previous_key, None)
+            self.metadata._remember((str(target), *previous_key[1:]), cached)
+        self.refresh()
+        self.summary.setText(f'已重命名为 {target.name}')
+        return True
 
     def file_menu(self, path: Path, parent):
         menu = QMenu(parent)
@@ -160,6 +269,7 @@ class RecordingLibrary(QWidget):
         menu.aboutToHide.connect(self._menu_closed)
         menu.addAction('播放', lambda: self.open_path(path))
         menu.addAction('打开所在文件夹', lambda: self.open_path(path.parent))
+        menu.addAction('重命名…', lambda: self.rename_file(path))
         menu.addSeparator()
         menu.addAction('删除', lambda: self.delete_file(path))
         return menu
@@ -191,7 +301,10 @@ class RecordingLibrary(QWidget):
         if answer != QMessageBox.StandardButton.Yes:
             return
         # Never fall back to permanent deletion if the platform has no trash.
-        removed = QFile.moveToTrash(str(path))
+        self.metadata.stop()
+        result = QFile.moveToTrash(str(path))
+        # PySide versions expose the optional output path differently.
+        removed = result[0] if isinstance(result, tuple) else result
         self.refresh()
         if not removed:
             self.summary.setText('无法移到回收站，文件已保留。请打开所在文件夹处理。')

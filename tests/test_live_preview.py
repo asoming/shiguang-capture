@@ -85,3 +85,48 @@ def test_orb_animation_only_runs_while_visible_and_recording(qt_session):
     orb.hide()
     assert not orb.animation.isActive()
     orb.deleteLater()
+
+
+def test_preview_retries_are_bounded_and_stop_cancels_retry(qt_session):
+    monitor = LivePreview()
+    monitor.target = ('screen', None, None)
+    for retry in (1, 2):
+        monitor._fail('temporary failure')
+        assert monitor.retry_timer.isActive()
+        assert monitor.retry_timer.interval() == retry * 1000
+        assert monitor.retries == retry
+    monitor._fail('still unavailable')
+    assert not monitor.retry_timer.isActive()
+    assert monitor.target == ('screen', None, None)
+    monitor.stop()
+    monitor._launch()
+    assert monitor.target is None and monitor.process is None
+
+
+def test_same_target_can_restart_after_exhausting_retries(qt_session, monkeypatch):
+    monitor = LivePreview()
+    monitor.target = ('screen', None, None)
+    monitor.retries = 2
+    launches = []
+    monkeypatch.setattr(monitor, '_launch', lambda: launches.append(monitor.target))
+    monitor.start('screen')
+    assert launches == [('screen', None, None)]
+    assert monitor.retries == 0
+    monitor.stop()
+
+
+def test_docked_orb_stops_animation_and_supports_keyboard(qt_session):
+    from shiguang_capture.ui.record_overlay import RecordingOrb
+    orb = RecordingOrb()
+    orb.set_state('recording')
+    orb.show()
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    orb.move(area.topLeft())
+    orb.dock_if_near_edge()
+    assert orb.docked == 'left' and not orb.animation.isActive()
+    QTest.keyClick(orb, Qt.Key.Key_Space)
+    assert orb.expanded and orb.docked is None and orb.animation.isActive()
+    QTest.keyClick(orb, Qt.Key.Key_Escape)
+    assert not orb.expanded
+    orb.hide()
+    orb.deleteLater()

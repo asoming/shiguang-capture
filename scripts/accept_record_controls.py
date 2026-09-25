@@ -109,7 +109,7 @@ def main(destination):
         menu.popup(button.mapToGlobal(button.rect().bottomLeft()))
         pump(.2)
         menu.grab().save(str(output/'recording-file-menu.png'))
-        assert [action.text() for action in menu.actions() if not action.isSeparator()] == ['播放', '打开所在文件夹', '删除']
+        assert [action.text() for action in menu.actions() if not action.isSeparator()] == ['播放', '打开所在文件夹', '重命名…', '删除']
         menu.hide()
         frames = []
         with av.open(str(panel.last_path)) as media:

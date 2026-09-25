@@ -11,8 +11,10 @@ ROOT = Path(__file__).resolve().parent.parent
 def main():
     bundle = ROOT / 'dist/ShiguangCapture'
     version = (bundle / 'VERSION').read_text().strip()
-    if not re.fullmatch(r'\d+\.\d+\.\d+', version):
-        raise ValueError('A stable package version is required')
+    match = re.fullmatch(r'(\d+\.\d+\.\d+)((?:a|b|rc)\d+)?', version)
+    if not match:
+        raise ValueError('A valid package version is required')
+    deb_version = match[1] + ('~' + match[2] if match[2] else '')
     output = ROOT / f'dist/ShiguangCapture-v{version}-Linux-amd64.deb'
     with tempfile.TemporaryDirectory(prefix='shiguang-deb-') as temporary:
         stage = Path(temporary) / 'root'
@@ -24,7 +26,7 @@ def main():
         control.mkdir()
         size = sum(p.stat().st_size for p in app.rglob('*') if p.is_file() and not p.is_symlink())
         (control / 'control').write_text(f'''Package: shiguang-capture
-Version: {version}
+Version: {deb_version}
 Section: graphics
 Priority: optional
 Architecture: amd64

@@ -78,6 +78,9 @@ class RecordingOrb(QWidget):
     def __init__(self):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setWindowTitle('拾光 · 录制控制')
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName('录制控制')
+        self.setAccessibleDescription('空格或回车展开控制，Esc 收起；可拖动到屏幕边缘。')
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.expanded = False
         self.docked = None
@@ -119,7 +122,7 @@ class RecordingOrb(QWidget):
         self.update()
 
     def _animate_if_needed(self):
-        if self.isVisible() and self.state in ('starting', 'recording', 'saving'):
+        if self.isVisible() and not self.docked and self.state in ('starting', 'recording', 'saving'):
             self.animation.start()
         else:
             self.animation.stop()
@@ -138,6 +141,7 @@ class RecordingOrb(QWidget):
             button.setVisible(self.expanded)
         self.clock.setGeometry(78, 45, 135, 16)
         self.clock.setVisible(self.expanded)
+        self._animate_if_needed()
         self.update()
 
     def set_expanded(self, expanded):
@@ -185,6 +189,7 @@ class RecordingOrb(QWidget):
             if self.docked:
                 self.docked = None
                 self.resize(64, 64)
+                self._animate_if_needed()
             self.move(self._origin+delta)
             self.update()
 
@@ -197,12 +202,22 @@ class RecordingOrb(QWidget):
         else:
             self.set_expanded(not self.expanded)
 
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.set_expanded(not self.expanded)
+            event.accept()
+        elif event.key() == Qt.Key.Key_Escape:
+            self.set_expanded(False)
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self.expanded:
-            p.setPen(QPen(QColor('#BCD7F2'), 1))
-            p.setBrush(QColor(249, 253, 255, 250))
+            p.setPen(QPen(QColor('#DFE6EF'), 1))
+            p.setBrush(QColor(255, 255, 255, 252))
             p.drawRoundedRect(QRectF(1, 1, self.width()-2, 62), 31, 31)
         x = -30 if self.docked == 'left' else (2 if self.docked == 'right' else 2)
         p.setPen(Qt.PenStyle.NoPen)
@@ -214,7 +229,7 @@ class RecordingOrb(QWidget):
         p.drawEllipse(QRectF(x-2, 0, 64, 64))
         body = QLinearGradient(x+5, 5, x+51, 62)
         body.setColorAt(0, QColor('#61D9FF'))
-        body.setColorAt(.42, QColor('#338BFA'))
+        body.setColorAt(.42, QColor('#2875F6'))
         body.setColorAt(1, QColor('#193FAD'))
         p.setBrush(body)
         p.drawEllipse(QRectF(x, 2, 60, 60))

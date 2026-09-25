@@ -133,11 +133,11 @@ class ImageCanvas(QWidget):
         self.paint_marks(painter, self.marks + ([self.draft] if self.draft else []))
         if self.highlight:
             left, top, right, bottom = self.highlight
-            painter.setPen(QPen(QColor('#167D8D'), max(2,self.image.width()/400)))
+            painter.setPen(QPen(QColor('#2875F6'), max(2,self.image.width()/400)))
             painter.setBrush(QColor(22,125,141,35))
             painter.drawRect(QRectF(left,top,right-left,bottom-top))
         painter.restore()
-        painter.setPen(QColor('#167D8D'))
+        painter.setPen(QColor('#2875F6'))
         painter.drawRect(target)
 
     def mousePressEvent(self, event):

@@ -98,3 +98,49 @@ def test_orb_expands_contextual_controls_and_docks(panel):
     assert orb.docked == 'right' and orb.geometry().right() == area.right()
     panel._event({'type': 'saving'})
     assert not orb.play.isEnabled() and not orb.pause.isEnabled() and not orb.stop_button.isEnabled()
+
+
+def test_scope_selection_tracks_committed_target_and_cancel_keeps_it(panel):
+    from shiguang_capture.geometry import Rect
+    selected = []
+    panel.choose_region.connect(lambda: selected.append(True))
+    assert panel.full_button.isChecked()
+    QTest.mouseClick(panel.region_button, Qt.MouseButton.LeftButton)
+    assert selected and panel.full_button.isChecked()  # choosing/cancelling does not change the target
+    panel.set_region(Rect(10, 10, 200, 100))
+    assert panel.region_button.isChecked() and '200 × 100' in panel.scope_hint.text()
+    QTest.mouseClick(panel.full_button, Qt.MouseButton.LeftButton)
+    assert panel.full_button.isChecked() and panel.region is None and panel.window_title is None
+    panel.window_title = 'Chosen window'
+    panel._sync_scope_buttons()
+    assert panel.window_button.isChecked() and panel.scope_hint.text() == 'Chosen window'
+
+
+def test_audio_devices_expand_without_losing_selection(panel):
+    panel.microphone.addItem('Test microphone', 'microphone-1')
+    panel.system_audio.addItem('Test system sound', 'system-1')
+    panel.audio.setCurrentIndex(panel.audio.findData('both'))
+    assert panel.audio_details_button.isVisible() and not panel.audio_details.isVisible()
+    QTest.mouseClick(panel.audio_details_button, Qt.MouseButton.LeftButton)
+    assert panel.microphone.isVisible() and panel.system_audio.isVisible()
+    QTest.mouseClick(panel.audio_details_button, Qt.MouseButton.LeftButton)
+    assert not panel.audio_details.isVisible()
+    assert panel.microphone.currentData() == 'microphone-1'
+    panel.audio.setCurrentIndex(panel.audio.findData('none'))
+    assert not panel.audio_details_button.isVisible()
+
+
+def test_preview_error_offers_reconnect_and_first_frame_clears_it(panel, monkeypatch):
+    from PySide6.QtGui import QImage
+    calls = []
+    monkeypatch.setattr(panel.live_preview, 'restart', lambda: calls.append('restart'))
+    panel._preview_failed('屏幕权限不可用')
+    assert panel.preview_retry.isVisible()
+    QTest.mouseClick(panel.preview_retry, Qt.MouseButton.LeftButton)
+    assert calls == ['restart']
+    panel._preview_recovering('正在重连')
+    assert '重连' in panel.preview_badge.text() and not panel.preview_retry.isVisible()
+    image = QImage(16, 9, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.blue)
+    panel._preview_frame(image, (1920, 1080))
+    assert not panel.preview_retry.isVisible() and '实时' in panel.preview_badge.text()

@@ -1,24 +1,25 @@
-"""ui/settings_window.py — 设置主界面（五页签，保存即生效）。
-
-常规 / 热键 / 贴图与取色 / 识别 / 关于与更新。
-保存后通过 settings_saved 信号把新配置交回 AppController 统一应用。
-"""
+"""Settings sidebar, real application preferences, and immediate tool entry points."""
 from __future__ import annotations
-from copy import deepcopy
-from .theme import STYLE
 
-from PySide6.QtCore import Qt, Signal
+from copy import deepcopy
+
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QScrollArea, QSlider, QTabWidget, QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout,
+    QLabel, QLayout, QLineEdit, QPushButton, QScrollArea,
+    QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from .. import __app_name__, __version__
 from ..config import AppConfig, HotkeyConfig
 from ..shortcuts import normalize_shortcut
-from .hotkey_edit import HotkeyEdit
 from ..updater import RELEASES_PAGE
+from .hotkey_edit import HotkeyEdit
 from .icon import make_icon
+from .settings_style import SETTINGS_STYLE
+from .theme import STYLE
+from .tool_icons import tool_icon
 
 _HOTKEY_FIELDS = [
     ("capture_region", "区域截图"),
@@ -26,7 +27,7 @@ _HOTKEY_FIELDS = [
     ("capture_scroll", "滚动长截图"),
     ("pin_last", "贴图（剪贴板图像）"),
     ("color_picker", "取色器"),
-    ('restore_all_pins', '找回全部贴图 / 退出穿透'),
+    ("restore_all_pins", "找回全部贴图 / 退出穿透"),
     ("hide_all_pins", "隐藏 / 恢复全部贴图"),
     ("ocr_recognize", "OCR 识别（剪贴板 / 上次截图）"),
     ("record_toggle", "录屏 / 暂停 / 继续"),
@@ -34,227 +35,366 @@ _HOTKEY_FIELDS = [
 ]
 
 
+class SettingsComboBox(QComboBox):
+    """Keep the disclosure arrow visible with native and offscreen Qt styles."""
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if not self.isEnabled():
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor('#899BB5'), 1.5))
+        x, y = self.width() - 15, self.height() / 2
+        painter.drawLine(QPointF(x - 3, y - 1), QPointF(x, y + 2))
+        painter.drawLine(QPointF(x, y + 2), QPointF(x + 3, y - 1))
+
+
+class SettingsToggle(QCheckBox):
+    """A compact switch retaining QCheckBox keyboard and accessibility behavior."""
+
+    def __init__(self, label: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAccessibleName(label)
+        self.setToolTip(label)
+        self.setFixedSize(38, 24)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def hitButton(self, position) -> bool:
+        return self.rect().contains(position)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = '#2875F6' if self.isChecked() else '#D8E0EB'
+        if not self.isEnabled():
+            color = '#E7ECF3'
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(color))
+        painter.drawRoundedRect(QRectF(2, 3, 34, 18), 9, 9)
+        painter.setBrush(QColor('#FFFFFF'))
+        painter.drawEllipse(QRectF(21 if self.isChecked() else 4, 5, 14, 14))
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor('#99BFFA'), 1))
+            painter.drawRoundedRect(QRectF(0.5, 1.5, 37, 21), 10, 10)
+
+
 class SettingsWindow(QDialog):
-    settings_saved = Signal(object)        # AppConfig
+    settings_saved = Signal(object)
     check_update_requested = Signal()
+    capture_requested = Signal()
+    record_requested = Signal()
+    recognize_requested = Signal()
 
     def __init__(self, config: AppConfig, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config = deepcopy(config)
+        self.setObjectName('settingsWindow')
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setStyleSheet(STYLE)
-        self.setWindowTitle(f"{__app_name__} · 设置")
+        self.setStyleSheet(STYLE + SETTINGS_STYLE)
+        self.setWindowTitle(f'{__app_name__} · 设置')
         self.setWindowIcon(make_icon())
-        self.setMinimumWidth(680)
-        self.resize(780, 680)
+        self.setMinimumSize(780, 540)
+        self.resize(940, 660)
         self.setModal(False)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 24, 24, 20)
-        root.setSpacing(18)
-        tabs = QTabWidget()
-        tabs.addTab(self._build_general(), "常规")
-        tabs.addTab(self._build_hotkeys(), "快捷键")
-        tabs.addTab(self._build_pin_picker(), "贴图与取色")
-        tabs.addTab(self._build_ocr(), "识别")
-        tabs.addTab(self._build_about(), "关于与更新")
-        root.addWidget(tabs)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_header())
+        body = QHBoxLayout()
+        body.setSpacing(0)
+        self.pages = QStackedWidget()
+        sidebar = QWidget(objectName='settingsSidebar')
+        sidebar.setFixedWidth(176)
+        navigation = QVBoxLayout(sidebar)
+        navigation.setContentsMargins(14, 24, 14, 20)
+        navigation.setSpacing(5)
+        self._nav_group = QButtonGroup(self)
+        self._nav_buttons: list[QPushButton] = []
+        for index, (label, builder) in enumerate((
+            ('常规', self._build_general),
+            ('快捷键', self._build_hotkeys),
+            ('贴图与取色', self._build_pin_picker),
+            ('识别与翻译', self._build_ocr),
+            ('关于与更新', self._build_about),
+        )):
+            button = QPushButton(label, objectName='settingsCategory')
+            button.setCheckable(True)
+            button.setMinimumHeight(40)
+            self._nav_group.addButton(button, index)
+            self._nav_buttons.append(button)
+            navigation.addWidget(button)
+            self.pages.addWidget(builder())
+        self._nav_group.idClicked.connect(self._switch_to_tab)
+        navigation.addStretch()
+        version = QLabel(f'v{__version__}', objectName='settingsCaption')
+        version.setContentsMargins(16, 0, 0, 0)
+        navigation.addWidget(version)
+        body.addWidget(sidebar)
+        body.addWidget(self.pages, 1)
+        root.addLayout(body, 1)
+        root.addWidget(self._build_footer())
+        self._switch_to_tab(0)
 
-        self.status = QLabel('', objectName="muted")
+    def _build_header(self) -> QWidget:
+        header = QWidget(objectName='settingsHeader')
+        header.setFixedHeight(68)
+        layout = QHBoxLayout(header)
+        layout.setContentsMargins(28, 0, 24, 0)
+        layout.setSpacing(12)
+        layout.addWidget(QLabel('拾光', objectName='settingsBrand'))
+        layout.addWidget(QLabel('设置', objectName='settingsCaption'))
+        layout.addStretch()
+        for label, icon, signal, primary in (
+            ('截图', 'rect', self.capture_requested, True),
+            ('录屏', 'play', self.record_requested, False),
+            ('识别', 'ocr', self.recognize_requested, False),
+        ):
+            button = QPushButton(label, objectName='primary' if primary else 'settingsQuick')
+            button.setIcon(tool_icon(icon, '#FFFFFF' if primary else '#6883A8'))
+            button.setIconSize(QSize(17, 17))
+            button.setAccessibleName('开始区域截图' if primary else '打开录屏' if icon == 'play' else '打开识别工作台')
+            button.setAutoDefault(False)
+            button.clicked.connect(signal.emit)
+            layout.addWidget(button)
+        return header
+
+    def _build_footer(self) -> QWidget:
+        footer = QWidget(objectName='settingsFooter')
+        layout = QHBoxLayout(footer)
+        layout.setContentsMargins(26, 15, 24, 15)
+        layout.setSpacing(12)
+        self.status = QLabel('', objectName='settingsError')
         self.status.setWordWrap(True)
-        root.addWidget(self.status)
-        buttons = QHBoxLayout()
-        buttons.addStretch(1)
-        cancel = QPushButton("取消")
-        cancel.clicked.connect(self.close)
-        save = QPushButton("保存", objectName="primary")
-        save.setDefault(True)
-        save.clicked.connect(self._on_save)
-        buttons.addWidget(cancel)
-        buttons.addWidget(save)
-        root.addLayout(buttons)
+        layout.addWidget(self.status, 1)
+        self.cancel_button = QPushButton('取消')
+        self.cancel_button.setAutoDefault(False)
+        self.cancel_button.clicked.connect(self.reject)
+        self.save_button = QPushButton('保存设置', objectName='primary')
+        self.save_button.setDefault(True)
+        self.save_button.clicked.connect(self._on_save)
+        layout.addWidget(self.cancel_button)
+        layout.addWidget(self.save_button)
+        return footer
 
-    # ================= 常规 =================
+    def _page(self, title: str, description: str = '') -> tuple[QScrollArea, QVBoxLayout]:
+        content = QWidget(objectName='settingsPageContent')
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(32, 27, 32, 24)
+        layout.setSpacing(0)
+        layout.addWidget(QLabel(title, objectName='settingsPageTitle'))
+        if description:
+            hint = QLabel(description, objectName='settingsPageDescription')
+            hint.setWordWrap(True)
+            layout.addSpacing(7)
+            layout.addWidget(hint)
+        layout.addSpacing(23)
+        scroll = QScrollArea(objectName='settingsPage')
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(content)
+        return scroll, layout
+
+    def _row(self, layout: QVBoxLayout, label: str, control: QWidget | QLayout) -> None:
+        row = QWidget(objectName='settingsRow')
+        row.setMinimumHeight(61)
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 11, 0, 11)
+        line.setSpacing(18)
+        caption = QLabel(label, objectName='settingsLabel')
+        caption.setWordWrap(True)
+        line.addWidget(caption, 1)
+        if isinstance(control, QLayout):
+            wrapper = QWidget()
+            wrapper.setLayout(control)
+            control.setContentsMargins(0, 0, 0, 0)
+            control = wrapper
+        line.addWidget(control)
+        if isinstance(control, (QLineEdit, QComboBox)):
+            control.setMinimumWidth(190)
+            control.setMaximumWidth(265)
+            caption.setBuddy(control)
+        layout.addWidget(row)
+
+    def _note(self, layout: QVBoxLayout, text: str) -> None:
+        note = QLabel(text, objectName='settingsNote')
+        note.setWordWrap(True)
+        layout.addSpacing(18)
+        layout.addWidget(note)
+
     def _build_general(self) -> QWidget:
-        w = QWidget()
-        form = QFormLayout(w)
-
-        dir_row = QHBoxLayout()
+        page, layout = self._page('常规')
+        directory = QHBoxLayout()
+        directory.setSpacing(8)
         self.save_dir_edit = QLineEdit(self._config.save_dir)
-        browse = QPushButton("浏览…")
+        self.save_dir_edit.setAccessibleName('截图保存目录')
+        self.save_dir_edit.setMinimumWidth(180)
+        self.save_dir_edit.setMaximumWidth(245)
+        browse = QPushButton('浏览…')
+        browse.setAutoDefault(False)
         browse.clicked.connect(self._pick_dir)
-        dir_row.addWidget(self.save_dir_edit, 1)
-        dir_row.addWidget(browse)
-        form.addRow("截图保存目录", dir_row)
-
-        self.format_combo = QComboBox()
-        self.format_combo.addItems(["png", "jpg"])
+        directory.addWidget(self.save_dir_edit, 1)
+        directory.addWidget(browse)
+        self._row(layout, '截图保存目录', directory)
+        self.format_combo = SettingsComboBox()
+        self.format_combo.addItems(['png', 'jpg'])
         self.format_combo.setCurrentText(self._config.image_format)
-        form.addRow("图像格式", self.format_combo)
-
-        self.clipboard_check = QCheckBox("截图后自动复制到剪贴板")
+        self.format_combo.setAccessibleName('图片格式')
+        self._row(layout, '图片格式', self.format_combo)
+        self.clipboard_check = QCheckBox(self)
         self.clipboard_check.setChecked(self._config.copy_to_clipboard)
         self.clipboard_check.hide()
-        form.addRow(QLabel("截图默认只复制；只有点击保存才会写入文件。", objectName="muted"))
-
-        self.sound_check = QCheckBox("截图时播放快门声")
+        self.sound_check = QCheckBox(self)
         self.sound_check.setChecked(self._config.play_shutter_sound)
         self.sound_check.hide()
-
-        self.autostart_check = QCheckBox("开机自动启动")
+        self.autostart_check = SettingsToggle('开机自动启动')
         self.autostart_check.setChecked(self._config.launch_at_login)
-        form.addRow(self.autostart_check)
-        return w
+        self._row(layout, '开机自动启动', self.autostart_check)
+        self._note(layout, '截图默认只复制，点击保存才会写入文件。')
+        layout.addStretch()
+        return page
 
     def _pick_dir(self) -> None:
-        d = QFileDialog.getExistingDirectory(self, "选择截图保存目录", self.save_dir_edit.text())
-        if d:
-            self.save_dir_edit.setText(d)
+        directory = QFileDialog.getExistingDirectory(self, '选择截图保存目录', self.save_dir_edit.text())
+        if directory:
+            self.save_dir_edit.setText(directory)
 
-    # ================= 热键 =================
     def _build_hotkeys(self) -> QWidget:
-        w = QWidget()
-        form = QFormLayout(w)
+        page, layout = self._page('快捷键', '点击后按键。Backspace 清除，Esc 取消；保存后立即生效。')
         self._hotkey_edits: dict[str, HotkeyEdit] = {}
         for attr, label in _HOTKEY_FIELDS:
             edit = HotkeyEdit(getattr(self._config.hotkeys, attr))
+            edit.setObjectName('settingsHotkey')
             edit.setAccessibleName(label + '快捷键')
+            edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self._hotkey_edits[attr] = edit
-            form.addRow(label, edit)
-        self.hotkey_warn = QLabel("")
-        self.hotkey_warn.setStyleSheet("color:#ff6b6e")
+            self._row(layout, label, edit)
+        self.hotkey_warn = QLabel('', objectName='settingsError')
         self.hotkey_warn.setWordWrap(True)
-        form.addRow(self.hotkey_warn)
-        hint = QLabel("点击输入框后按下组合键。Backspace 清除，Esc 取消修改；保存后立即生效。")
-        hint.setStyleSheet("color:#888")
-        hint.setWordWrap(True)
-        form.addRow(hint)
-        reset = QPushButton('恢复默认快捷键')
+        layout.addSpacing(14)
+        layout.addWidget(self.hotkey_warn)
+        reset = QPushButton('恢复默认快捷键', objectName='settingsLink')
+        reset.setAutoDefault(False)
         reset.clicked.connect(self._reset_hotkeys)
-        form.addRow(reset)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(w)
-        return scroll
+        layout.addWidget(reset, 0, Qt.AlignmentFlag.AlignLeft)
+        layout.addStretch()
+        return page
 
-    def _reset_hotkeys(self):
+    def _reset_hotkeys(self) -> None:
         defaults = HotkeyConfig()
         for attr, edit in self._hotkey_edits.items():
             edit.setText(getattr(defaults, attr))
         self.hotkey_warn.clear()
+        self.status.clear()
 
-    # ================= 贴图与取色 =================
     def _build_pin_picker(self) -> QWidget:
-        w = QWidget()
-        form = QFormLayout(w)
-
+        page, layout = self._page('贴图与取色')
         self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.opacity_slider.setAccessibleName('贴图默认透明度')
         self.opacity_slider.setRange(10, 100)
+        self.opacity_slider.setFixedWidth(180)
         self.opacity_slider.setValue(round(self._config.pin_default_opacity * 100))
-        self.opacity_label = QLabel(f"{self.opacity_slider.value()}%")
-        self.opacity_slider.valueChanged.connect(lambda v: self.opacity_label.setText(f"{v}%"))
-        row = QHBoxLayout()
-        row.addWidget(self.opacity_slider, 1)
-        row.addWidget(self.opacity_label)
-        form.addRow("贴图默认透明度", row)
-
-        self.picker_combo = QComboBox()
-        self.picker_combo.addItems(["hex", "rgb", "hsv", "hsl", "rgba"])
+        self.opacity_label = QLabel(f'{self.opacity_slider.value()}%', objectName='settingsValue')
+        self.opacity_label.setMinimumWidth(37)
+        self.opacity_slider.valueChanged.connect(lambda value: self.opacity_label.setText(f'{value}%'))
+        opacity = QHBoxLayout()
+        opacity.setSpacing(12)
+        opacity.addWidget(self.opacity_slider)
+        opacity.addWidget(self.opacity_label)
+        self._row(layout, '贴图默认透明度', opacity)
+        self.picker_combo = SettingsComboBox()
+        self.picker_combo.addItems(['hex', 'rgb', 'hsv', 'hsl', 'rgba'])
         self.picker_combo.setCurrentText(self._config.picker_format)
-        form.addRow("取色复制格式", self.picker_combo)
-        return w
+        self.picker_combo.setAccessibleName('取色复制格式')
+        self._row(layout, '取色复制格式', self.picker_combo)
+        self._note(layout, '贴图：滚轮调节透明度，Ctrl + 滚轮缩放。')
+        layout.addStretch()
+        return page
 
-    # ================= 识别 =================
     def _build_ocr(self) -> QWidget:
-        w = QWidget()
-        form = QFormLayout(w)
-        self.ocr_combo = QComboBox()
-        self.ocr_combo.addItem("本地引擎（默认 · 永久免费 · 图像不出本机）", "local")
+        page, layout = self._page('识别与翻译')
+        self.ocr_combo = SettingsComboBox()
+        self.ocr_combo.addItem('本地 OCR', 'local')
+        self.ocr_combo.setCurrentIndex(0)
         self.ocr_combo.setEnabled(False)
-        idx = self.ocr_combo.findData(self._config.ocr_engine)
-        self.ocr_combo.setCurrentIndex(max(idx, 0))
-        form.addRow("识别引擎", self.ocr_combo)
-
-        self.lang_combo = QComboBox()
-        self.lang_combo.addItem("自动判定（中↔英互译）", "auto")
-        self.lang_combo.addItem("翻译为中文", "zh")
-        self.lang_combo.addItem("翻译为英文", "en")
-        li = self.lang_combo.findData(getattr(self._config, "target_lang", "auto"))
-        self.lang_combo.setCurrentIndex(max(li, 0))
-        form.addRow("翻译目标语言", self.lang_combo)
-
-        self.cloud_translate_check = QCheckBox("允许云端翻译（默认关闭 · 文本将离开本机）")
-        self.cloud_translate_check.setChecked(
-            getattr(self._config, "allow_cloud_translate", False))
+        self.ocr_combo.setAccessibleName('识别引擎')
+        self._row(layout, '识别引擎', self.ocr_combo)
+        self.lang_combo = SettingsComboBox()
+        for label, value in [('自动（中英互译）', 'auto'), ('中文', 'zh'), ('英文', 'en')]:
+            self.lang_combo.addItem(label, value)
+        self.lang_combo.setCurrentIndex(max(0, self.lang_combo.findData(self._config.target_lang)))
+        self.lang_combo.setAccessibleName('翻译目标语言')
+        self._row(layout, '翻译目标语言', self.lang_combo)
+        self.cloud_translate_check = QCheckBox(self)
+        self.cloud_translate_check.setChecked(self._config.allow_cloud_translate)
         self.cloud_translate_check.hide()
-
-        # 离线翻译模型状态
-        self.translate_status = QLabel("")
+        self.translate_status = QLabel('', objectName='settingsValue')
         self.translate_status.setWordWrap(True)
-        refresh = QPushButton("检测离线翻译能力")
+        self.translate_status.setMinimumWidth(230)
+        self.translate_status.setMaximumWidth(275)
+        self.translate_status.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._row(layout, '离线翻译模型', self.translate_status)
+        refresh = QPushButton('检测离线翻译能力', objectName='settingsLink')
+        refresh.setAutoDefault(False)
         refresh.clicked.connect(self._refresh_translate_status)
-        row = QHBoxLayout()
-        row.addWidget(refresh)
-        row.addWidget(self.translate_status, 1)
-        form.addRow("翻译引擎", row)
-
-        note = QLabel(
-            "识别与中英翻译在本机完成，不上传图像或文本。"
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet("color:#888")
-        form.addRow(note)
+        layout.addSpacing(14)
+        layout.addWidget(refresh, 0, Qt.AlignmentFlag.AlignLeft)
+        self._note(layout, '识别与中英翻译在本机完成，不上传图像或文本。')
+        layout.addStretch()
         self._refresh_translate_status()
-        return w
+        return page
 
     def _refresh_translate_status(self) -> None:
-        """检测翻译后端可用性并回显。"""
         try:
             from ..offline_translation import available
             from ..translate import argos_available
-
             if available():
-                self.translate_status.setText('离线中英翻译已就绪')
-                return
-            if argos_available():
-                self.translate_status.setText("✅ 离线神经翻译已就绪（argos-local）")
-                return
-        except Exception:  # noqa: BLE001
-            pass
-        self.translate_status.setText("⚠️ 未检测到离线模型，当前使用术语词典兜底")
+                message = '离线中英翻译已就绪'
+            elif argos_available():
+                message = '离线神经翻译已就绪'
+            else:
+                message = '未检测到离线模型，当前仅支持术语词典'
+        except Exception:  # Optional native backends can fail during import.
+            message = '无法检测离线模型，请重试'
+        self.translate_status.setText(message)
 
-    # ================= 关于与更新 =================
     def _build_about(self) -> QWidget:
-        w = QWidget()
-        lay = QVBoxLayout(w)
-        title = QLabel(f"<b>{__app_name__}</b> v{__version__}")
-        lay.addWidget(title)
-        lay.addWidget(QLabel("屏幕信息捕获与再利用工具 · MIT License"))
-        lay.addWidget(QLabel(f'<a href="{RELEASES_PAGE}">GitHub Releases</a>'))
-        for lbl in w.findChildren(QLabel):
-            lbl.setOpenExternalLinks(True)
-
-        row = QHBoxLayout()
-        self.update_btn = QPushButton("检查更新")
+        page, layout = self._page(__app_name__)
+        self._row(layout, '当前版本', QLabel(f'v{__version__}', objectName='settingsValue'))
+        self._row(layout, '许可证', QLabel('MIT', objectName='settingsValue'))
+        project = QLabel('<a style="color:#2875F6;text-decoration:none" href="https://github.com/asoming/shiguang-capture">GitHub ↗</a>')
+        project.setOpenExternalLinks(True)
+        project.setAccessibleName('GitHub 项目主页')
+        self._row(layout, '项目主页', project)
+        releases = QLabel(f'<a style="color:#2875F6;text-decoration:none" href="{RELEASES_PAGE}">版本下载 ↗</a>')
+        releases.setOpenExternalLinks(True)
+        releases.setAccessibleName('GitHub 版本下载')
+        self._row(layout, '下载安装包', releases)
+        self.update_btn = QPushButton('检查更新', objectName='settingsLink')
+        self.update_btn.setAutoDefault(False)
         self.update_btn.clicked.connect(self._on_check_update)
-        self.update_status = QLabel("尚未检查")
-        row.addWidget(self.update_btn)
-        row.addWidget(self.update_status, 1)
-        lay.addLayout(row)
-        lay.addStretch(1)
-        return w
+        self.update_status = QLabel('尚未检查', objectName='settingsValue')
+        self.update_status.setWordWrap(True)
+        self.update_status.setMaximumWidth(225)
+        updates = QHBoxLayout()
+        updates.setSpacing(18)
+        updates.addWidget(self.update_btn)
+        updates.addWidget(self.update_status)
+        self._row(layout, '新版本', updates)
+        layout.addStretch()
+        return page
 
     def _on_check_update(self) -> None:
         self.update_btn.setEnabled(False)
-        self.update_status.setText("正在检查…")
+        self.update_status.setText('正在检查…')
         self.check_update_requested.emit()
 
     def set_update_result(self, text: str) -> None:
-        """由 AppController 回填检查结论。"""
         self.update_btn.setEnabled(True)
         self.update_status.setText(text)
 
-    # ================= 保存 =================
     def _on_save(self) -> None:
         cfg = deepcopy(self._config)
         cfg.save_dir = self.save_dir_edit.text().strip() or cfg.save_dir
@@ -272,21 +412,26 @@ class SettingsWindow(QDialog):
                 setattr(cfg.hotkeys, attr, normalize_shortcut(edit.text()))
             except ValueError:
                 self.hotkey_warn.setText(f'{dict(_HOTKEY_FIELDS)[attr]}：请重新按下快捷键。')
+                self.status.setText('设置未保存，原快捷键仍可使用。')
                 self._switch_to_tab(1)
                 edit.setFocus()
+                self.pages.currentWidget().ensureWidgetVisible(edit)
                 return
-
         conflicts = cfg.hotkeys.conflicts()
         if conflicts:
             labels = dict(_HOTKEY_FIELDS)
-            names = "、".join(f"{labels[a]} ↔ {labels[b]}" for a, b in conflicts)
-            self.hotkey_warn.setText(f"热键冲突：{names}。请修改后重新保存。")
-            self.status.setText("设置未保存，原快捷键仍可使用。")
+            names = '、'.join(f'{labels[a]} ↔ {labels[b]}' for a, b in conflicts)
+            self.hotkey_warn.setText(f'热键冲突：{names}。请修改后重新保存。')
+            self.status.setText('设置未保存，原快捷键仍可使用。')
             self._switch_to_tab(1)
+            self.pages.currentWidget().ensureWidgetVisible(self.hotkey_warn)
             return
+        self.hotkey_warn.clear()
+        self.status.clear()
         self.settings_saved.emit(cfg)
 
     def _switch_to_tab(self, index: int) -> None:
-        tabs = self.findChild(QTabWidget)
-        if tabs:
-            tabs.setCurrentIndex(index)
+        """Keep the controller/test-facing page switch stable after the sidebar change."""
+        if 0 <= index < self.pages.count():
+            self.pages.setCurrentIndex(index)
+            self._nav_buttons[index].setChecked(True)

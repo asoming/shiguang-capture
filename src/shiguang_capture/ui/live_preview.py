@@ -11,22 +11,39 @@ from ..recording.preview import preview_worker
 class LivePreview(QObject):
     frame_ready = Signal(object, object)
     failed = Signal(str)
+    recovering = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.process = self.connection = None
         self.target = None
         self.pending = False
+        self.retries = 0
+        self.retry_timer = QTimer(self)
+        self.retry_timer.setSingleShot(True)
+        self.retry_timer.timeout.connect(self._launch)
         self.timer = QTimer(self)
         self.timer.setInterval(67)
         self.timer.timeout.connect(self._poll)
 
     def start(self, screen_name, region=None, window_title=None):
         target = (screen_name, region, window_title)
-        if target == self.target:
+        if target == self.target and (self.process is not None or self.retry_timer.isActive()):
             return
         self.stop()
         self.target = target
+        self._launch()
+
+    def restart(self):
+        target = self.target
+        if target is not None:
+            self.stop()
+            self.start(*target)
+
+    def _launch(self):
+        target = self.target
+        if target is None:
+            return
         context = multiprocessing.get_context('spawn')
         self.connection, child = context.Pipe()
         self.process = context.Process(target=preview_worker, args=(child, *target), daemon=True)
@@ -40,6 +57,8 @@ class LivePreview(QObject):
             child.close()
 
     def stop(self):
+        self.retry_timer.stop()
+        self.retries = 0
         self.timer.stop()
         if self.process is not None:
             if self.process.pid is not None:
@@ -57,11 +76,15 @@ class LivePreview(QObject):
         self.pending = False
 
     def _fail(self, message):
-        # Hold the failed target until the user changes it or reopens the panel.
-        target = self.target
+        target, retries = self.target, self.retries
         self.stop()
-        self.target = target
+        self.target, self.retries = target, retries
         self.failed.emit(message)
+        # A hidden panel clears its target; never revive a stopped preview.
+        if self.target is not None and self.retries < 2:
+            self.retries += 1
+            self.recovering.emit(f'正在重新连接预览（{self.retries}/2）')
+            self.retry_timer.start(self.retries * 1000)
 
     def _poll(self):
         if self.process is None:
