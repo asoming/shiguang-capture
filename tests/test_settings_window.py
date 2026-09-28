@@ -13,7 +13,8 @@ from shiguang_capture.ui.settings_window import SettingsWindow
 
 
 @pytest.fixture
-def settings():
+def settings(monkeypatch):
+    monkeypatch.setattr('shiguang_capture.ui.settings_window.autostart.is_supported', lambda: True)
     app = QApplication.instance() or QApplication([])
     window = SettingsWindow(AppConfig())
     window.show()

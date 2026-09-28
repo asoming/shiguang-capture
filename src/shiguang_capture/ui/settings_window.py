@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from .. import __app_name__, __version__
+from .. import __app_name__, __version__, autostart
 from ..config import AppConfig, HotkeyConfig
 from ..shortcuts import normalize_shortcut
 from ..updater import RELEASES_PAGE
@@ -251,6 +251,9 @@ class SettingsWindow(QDialog):
         self.sound_check.hide()
         self.autostart_check = SettingsToggle('开机自动启动')
         self.autostart_check.setChecked(self._config.launch_at_login)
+        self.autostart_check.setEnabled(autostart.is_supported())
+        self.autostart_check.setToolTip('保存设置后，下次登录桌面时启动' if autostart.is_supported()
+                                       else '当前系统暂不支持在应用内设置自启')
         self._row(layout, '开机自动启动', self.autostart_check)
         self._note(layout, '截图默认只复制，点击保存才会写入文件。')
         layout.addStretch()

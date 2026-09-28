@@ -90,6 +90,37 @@ def test_globally_restore_a_pin_hidden_through_its_own_menu(controller):
         pin.close()
 
 
+def test_failed_autostart_keeps_settings_open_and_does_not_save(controller, monkeypatch):
+    from copy import deepcopy
+    monkeypatch.setattr('shiguang_capture.app.autostart.is_enabled', lambda: False)
+    monkeypatch.setattr('shiguang_capture.app.autostart.set_enabled', lambda enabled: False)
+    saved = []
+    monkeypatch.setattr(AppConfig, 'save', lambda self: saved.append(self))
+    controller.config.launch_at_login = True  # stale persisted preference
+    controller.open_settings()
+    assert not controller._settings.autostart_check.isChecked()
+    desired = deepcopy(controller.config)
+    controller.apply_config(desired)
+    assert not saved and controller._settings.isVisible()
+    assert '自启设置失败' in controller._settings.status.text()
+    controller._settings.close()
+
+
+def test_config_failure_restores_actual_autostart_state(controller, monkeypatch):
+    from copy import deepcopy
+    calls = []
+    monkeypatch.setattr('shiguang_capture.app.autostart.is_enabled', lambda: False)
+    monkeypatch.setattr('shiguang_capture.app.autostart.set_enabled', lambda value: calls.append(value) or True)
+    def fail(self):
+        raise OSError('read only')
+    monkeypatch.setattr(AppConfig, 'save', fail)
+    desired = deepcopy(controller.config)
+    desired.launch_at_login = True
+    controller.apply_config(desired)
+    assert calls == [True, False]
+    assert not controller.config.launch_at_login
+
+
 def test_null_image_does_not_claim_saved(tmp_path):
     with pytest.raises(ValueError):
         save_image(QImage(), tmp_path/'none.png')

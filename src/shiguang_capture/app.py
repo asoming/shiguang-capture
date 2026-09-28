@@ -653,7 +653,9 @@ class AppController:
             self._settings.raise_()
             self._settings.activateWindow()
             return
-        win = SettingsWindow(self.config)
+        settings_config = deepcopy(self.config)
+        settings_config.launch_at_login = autostart.is_enabled()
+        win = SettingsWindow(settings_config)
         win.settings_saved.connect(self.apply_config)
         win.capture_requested.connect(self.start_region_capture)
         win.record_requested.connect(self.open_recording)
@@ -668,16 +670,23 @@ class AppController:
         if config.hotkeys != previous.hotkeys and not self.hotkeys.register(vars(config.hotkeys)):
             self._error('快捷键无法注册，原设置已保留。请检查按键格式和系统权限。')
             return
+        previous_startup = autostart.is_enabled()
+        startup_changed = config.launch_at_login != previous_startup
+        if startup_changed and not autostart.set_enabled(config.launch_at_login):
+            self.hotkeys.register(vars(previous.hotkeys))
+            self._error('开机自启设置失败，设置未保存。请检查启动项目录或注册表权限。')
+            return
         try:
             config.save()
         except OSError:
             self.hotkeys.register(vars(previous.hotkeys))
+            if startup_changed and not autostart.set_enabled(previous_startup):
+                self._error('配置保存失败，且无法恢复原自启状态。请重新打开设置检查。')
+                return
             self._error('设置保存失败，原设置已保留。')
             return
         self.config = config
         self.tray.update_hotkeys(config.hotkeys)
-        if config.launch_at_login != autostart.is_enabled() and not autostart.set_enabled(config.launch_at_login):
-            self._error('设置已保存，但当前系统未能启用开机启动。')
         if self._settings:
             self._settings.accept()
         self.tray.notify('拾光 Capture', '设置已保存。')
