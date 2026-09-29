@@ -252,7 +252,7 @@ class SettingsWindow(QDialog):
         self.autostart_check = SettingsToggle('开机自动启动')
         self.autostart_check.setChecked(self._config.launch_at_login)
         self.autostart_check.setEnabled(autostart.is_supported())
-        self.autostart_check.setToolTip('保存设置后，下次登录桌面时启动' if autostart.is_supported()
+        self.autostart_check.setToolTip('保存设置后，登录桌面时仅驻留托盘，不显示窗口' if autostart.is_supported()
                                        else '当前系统暂不支持在应用内设置自启')
         self._row(layout, '开机自动启动', self.autostart_check)
         self._note(layout, '截图默认只复制，点击保存才会写入文件。')

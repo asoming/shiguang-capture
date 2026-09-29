@@ -26,10 +26,10 @@ def _launcher_args() -> list[str]:
 
 def _launcher_command() -> str:
     import subprocess
-    return subprocess.list2cmdline(_launcher_args())
+    return subprocess.list2cmdline([*_launcher_args(), '--background'])
 
 
-def _desktop_command() -> str:
+def _desktop_command(*, background=True) -> str:
     def quote(argument):
         if any(c in argument for c in '\n\r\x00'):
             raise ValueError('Invalid launcher path')
@@ -37,6 +37,8 @@ def _desktop_command() -> str:
         escaped = ''.join('\\' + c if c in '\\"`$' else c for c in argument)
         return '"' + escaped.replace('\\', '\\\\').replace('%', '%%') + '"'
     arguments = _launcher_args()
+    if background:
+        arguments = [*arguments, '--background']
     if '%' in arguments[0]:
         # GIO checks the executable before expanding %% field escapes. Passing
         # the path as env's argument preserves literal percent signs as well.
@@ -61,7 +63,7 @@ def is_enabled() -> bool:
             parser.read_string(_desktop_path().read_text(encoding='utf-8'))
             entry = parser['Desktop Entry']
             return (entry.get('Type') == 'Application'
-                    and entry.get('Exec') == _desktop_command()
+                    and entry.get('Exec') in (_desktop_command(), _desktop_command(background=False))
                     and not entry.getboolean('Hidden', fallback=False)
                     and entry.getboolean('X-GNOME-Autostart-enabled', fallback=True))
         except (OSError, ValueError, KeyError, configparser.Error):

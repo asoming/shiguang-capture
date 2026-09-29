@@ -672,7 +672,8 @@ class AppController:
             return
         previous_startup = autostart.is_enabled()
         startup_changed = config.launch_at_login != previous_startup
-        if startup_changed and not autostart.set_enabled(config.launch_at_login):
+        # Saving an enabled preference also upgrades older login commands.
+        if (startup_changed or config.launch_at_login) and not autostart.set_enabled(config.launch_at_login):
             self.hotkeys.register(vars(previous.hotkeys))
             self._error('开机自启设置失败，设置未保存。请检查启动项目录或注册表权限。')
             return
@@ -737,12 +738,13 @@ class AppController:
         self.app.quit()
 
 
-def main(argv=None):
+def main(argv=None, *, background=False):
     multiprocessing.freeze_support()
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName('shiguang-capture')
     app.setQuitOnLastWindowClosed(False)
     controller = AppController(app)
-    controller.open_settings()
+    if not background:
+        controller.open_settings()
     return app.exec()

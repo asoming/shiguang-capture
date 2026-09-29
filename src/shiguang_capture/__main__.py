@@ -11,6 +11,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="shiguang-capture", description=f"{__app_name__} — 屏幕信息捕获与再利用工具")
     p.add_argument("--version", action="store_true", help="显示版本号并退出")
     p.add_argument("--check", action="store_true", help="仅做环境自检（不启动 GUI）")
+    p.add_argument('--background', action='store_true', help='只启动托盘和快捷键，不打开设置窗口')
     p.add_argument("--self-test", action="store_true", help="运行安装包离屏自测（使用合成图片）")
     p.add_argument("--desktop-test", action="store_true", help="使用合成窗口实测当前 X11 桌面")
     p.add_argument('--recording-self-test', action='store_true', help='使用合成画面与音调验证安装包编码')
@@ -63,7 +64,7 @@ def main() -> int:
         return 0
     from .app import main as gui_main
 
-    return gui_main(sys.argv)
+    return gui_main(sys.argv, background=args.background)
 
 
 if __name__ == "__main__":

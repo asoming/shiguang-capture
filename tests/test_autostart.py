@@ -21,6 +21,7 @@ def test_enable_disable_and_external_disabled_state(linux):
     assert autostart.is_enabled()
     text = linux.read_text(encoding='utf-8')
     assert 'Type=Application' in text and 'Exec="' in text
+    assert '"--background"' in text
     linux.write_text(text.replace('Hidden=false', 'Hidden=true'), encoding='utf-8')
     assert not autostart.is_enabled()
     assert autostart.set_enabled(True)
@@ -66,7 +67,7 @@ def test_current_symlink_is_used_across_updates(linux, tmp_path, monkeypatch):
 
 def test_desktop_exec_escapes_literal_field_codes_and_shell_characters(linux, monkeypatch):
     monkeypatch.setattr(autostart, '_launcher_args', lambda: ['/tmp/a b%f"$`\\app'])
-    assert autostart._desktop_command() == '"/usr/bin/env" "/tmp/a b%%f\\\\"\\\\$\\\\`\\\\\\\\app"'
+    assert autostart._desktop_command() == '"/usr/bin/env" "/tmp/a b%%f\\\\"\\\\$\\\\`\\\\\\\\app" "--background"'
 
 
 def test_windows_creates_missing_run_key_and_preserves_command(monkeypatch):
@@ -88,6 +89,14 @@ def test_windows_creates_missing_run_key_and_preserves_command(monkeypatch):
         QueryValueEx=lambda key, name: (values.get(name, ''), 3), DeleteValue=delete)
     monkeypatch.setitem(autostart.sys.modules, 'winreg', registry)
     assert autostart.set_enabled(True) and autostart.is_enabled()
-    assert values['ShiguangCapture'] == '"C:\\Program Files\\Shiguang\\app.exe"'
+    assert values['ShiguangCapture'] == '"C:\\Program Files\\Shiguang\\app.exe" --background'
     assert autostart.set_enabled(False) and not autostart.is_enabled()
     assert autostart.set_enabled(False)
+
+
+def test_legacy_enabled_entry_can_be_upgraded_without_losing_state(linux):
+    assert autostart.set_enabled(True)
+    linux.write_text(linux.read_text(encoding='utf-8').replace(' "--background"', ''), encoding='utf-8')
+    assert autostart.is_enabled()
+    assert autostart.set_enabled(True)
+    assert '"--background"' in linux.read_text(encoding='utf-8')
